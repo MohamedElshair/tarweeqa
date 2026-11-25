@@ -737,7 +737,7 @@
       <div class="btn-row">
         <button class="secondary" data-act="copy" data-text="${esc(text)}">${esc(t('copyOrder'))}</button>
         ${wa(waLink('', text), t('sendOrderWa'), '')}
-        ${r.talabatUrl ? `<a class="secondary as-btn" href="${esc(r.talabatUrl)}" target="_blank" rel="noopener">${esc(t('openTalabat'))}</a>` : ''}
+        <button class="secondary" data-act="openTalabat">${esc(t('openTalabat'))}</button>
       </div>
       ${r.phone ? `<p class="phone-line"><span>${esc(t('callRest'))}:</span> <a href="tel:${esc(C.latinDigits(r.phone).replace(/[^\d+]/g, ''))}" class="tnum" dir="ltr">${esc(r.phone)}</a></p>` : ''}
       ${host && (st === 'ordering' || st === 'closed') ? `<button class="primary block big" data-act="markOrdered">✓ ${esc(t('markOrdered'))}</button><p class="muted small-text center">${esc(t('markOrderedHint'))}</p>` : ''}
@@ -1020,7 +1020,6 @@
         <label class="field"><span>${esc(t('restName'))}</span><input id="r-name" data-draft="name" value="${esc(d.name)}"></label>
         <div class="grid2">
           <label class="field"><span>${esc(t('restPhone'))}</span><input id="r-phone" data-draft="phone" type="tel" dir="ltr" value="${esc(d.phone)}"></label>
-          <label class="field"><span>${esc(t('talabatUrl'))}</span><input id="r-url" data-draft="talabatUrl" type="url" dir="ltr" value="${esc(d.talabatUrl)}" placeholder="https://www.talabat.com/egypt/..."></label>
         </div>
       </section>
       <section class="panel form">
@@ -1341,6 +1340,7 @@
     },
     closeInvoice: () => { const b = S.invoiceView && S.invoiceView.back; S.invoiceView = null; if (b) go(b.name, b); else render(true); },
     copyInvoiceLink: el => copyText(el.dataset.text),
+    openTalabat: () => openTalabatApp(),
     copyItems: () => {
       syncDraft();
       const src = S.restaurants.find(r => r.id === (S.copyFrom || ($('#copy-from') || {}).value));
@@ -1692,6 +1692,21 @@
 
   /* ---------- invoices ---------- */
   const ymd = ms => { const d = new Date(ms); return String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0'); };
+  // Opens the Talabat app itself (no deep link to a restaurant: Talabat has no public integration).
+  function openTalabatApp() {
+    const ua = navigator.userAgent || '';
+    const web = 'https://www.talabat.com/egypt';
+    if (/android/i.test(ua)) {
+      location.href = 'intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.talabat;S.browser_fallback_url=' + encodeURIComponent('https://play.google.com/store/apps/details?id=com.talabat') + ';end';
+    } else if (/iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+      const t0 = Date.now();
+      location.href = 'talabat://';
+      setTimeout(() => { if (!document.hidden && Date.now() - t0 < 2500) location.href = web; }, 1500);
+    } else {
+      window.open(web, '_blank', 'noopener');
+    }
+  }
+
   function invoiceLink(c, key) {
     return baseUrl() + '?inv=1&g=' + encodeURIComponent(c.groupId || S.gid) + '&c=' + encodeURIComponent(c.id) + '&p=' + encodeURIComponent(key) + '&k=' + encodeURIComponent(c.invoiceKey || '');
   }

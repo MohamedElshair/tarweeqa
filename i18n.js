@@ -61,7 +61,7 @@ window.TARWEEQA_I18N = {
     demoWaNote: 'في التجربة الواتساب بيفتح من غير رقم، عشان الأسماء أمثلة.',
 
     orderEmpty: 'لسه مفيش أصناف.', pieces: 'عدد القطع', foodTotal: 'إجمالي الأكل', copyOrder: 'انسخ القائمة', sendOrderWa: 'ابعتها واتساب',
-    callRest: 'اتصل بالمطعم', openTalabat: 'افتح على طلبات', markOrdered: 'تم الطلب', markOrderedHint: 'بعدها هتدخل المصاريف الفعلية وتبعت لكل واحد حسابه.',
+    callRest: 'اتصل بالمطعم', openTalabat: 'افتح تطبيق طلبات', markOrdered: 'تم الطلب', markOrderedHint: 'بعدها هتدخل المصاريف الفعلية وتبعت لكل واحد حسابه.',
     orderedNote: 'الطلب اتعمل. الحساب جاهز في تبويب «الحساب».', forWho: 'لـ', stillOpenWarn: 'الطلب لسه مفتوح، القائمة ممكن تتغير.',
 
     chargesTitle: 'مصاريف الطلب', chargesHint: 'اكتب المبالغ زي ما طالعة في طلبات أو مع الطيار. ضيف أي مصروف طلع: تيبس، عجز في الفكة، أي حاجة.',
@@ -218,7 +218,7 @@ window.TARWEEQA_I18N = {
     demoWaNote: 'In the demo WhatsApp opens without a number, because the names are examples.',
 
     orderEmpty: 'No items yet.', pieces: 'Pieces', foodTotal: 'Food total', copyOrder: 'Copy list', sendOrderWa: 'Send on WhatsApp',
-    callRest: 'Call restaurant', openTalabat: 'Open on Talabat', markOrdered: 'Order placed', markOrderedHint: 'Next you enter the actual charges and send everyone their share.',
+    callRest: 'Call restaurant', openTalabat: 'Open Talabat app', markOrdered: 'Order placed', markOrderedHint: 'Next you enter the actual charges and send everyone their share.',
     orderedNote: 'Order placed. The bill is ready in the "Bill" tab.', forWho: 'for', stillOpenWarn: 'The order is still open, so this list can change.',
 
     chargesTitle: 'Order charges', chargesHint: 'Type the amounts as Talabat or the rider shows them. Add anything that came up: a tip, a cash shortage, anything.',
