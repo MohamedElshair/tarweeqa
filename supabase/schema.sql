@@ -274,3 +274,12 @@ create or replace function tq_name_key(p text) returns text language sql immutab
   select regexp_replace(translate(lower(coalesce(p, '')), 'أإآةى', 'اااهي'), '[^[:alnum:]؀-ۿ]+', '', 'g') $$;
 -- tq_learn(p_data jsonb): upsert {name, phone, talabatUrl, fees, items} by name_key (newest prices win)
 -- tq_seed_group(p_gid text): copy every catalog restaurant the group doesn't have yet
+
+-- ---------------------------------------------------------------------------
+-- Saved receipts (migration saved_receipts_latest_price, 2026-11-25)
+--   tq_receipts: every uploaded receipt / menu screenshot, with a light JPEG and the parsed lines.
+--   tq_save_receipt(token, gid, cart_id, rest_name, order_no, at, parsed, image) → {id, dup}
+--     dedupes by order number, or by identical lines when there is none; writes one dated price per line.
+--   tq_receipts_list(token, gid, rest_name), tq_receipt_get(token, gid, id)
+--   tq_learn: prices are dated by the item ("at"); an older-dated price never replaces a newer one.
+-- ---------------------------------------------------------------------------

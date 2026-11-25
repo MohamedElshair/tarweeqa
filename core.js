@@ -335,7 +335,29 @@
   function memberSubtotal(m) {
     return round2(((m && m.items) || []).reduce((s, it) => s + num(it.price) * (num(it.qty) || 0), 0));
   }
+  /* Shared items (a bottle of water, a big plate for the table): cart.shared = [{ id, name, price, qty, keys: [memberKey…] }].
+     Each sharer gets an equal part as one line of their own; leftover piasters go to the first sharer. */
+  function withShared(cart) {
+    const sh = (cart && cart.shared || []).filter(x => num(x.price) * num(x.qty || 1) > 0 && (x.keys || []).length);
+    if (!sh.length) return cart;
+    const ms = {};
+    for (const k of Object.keys(cart.members || {})) ms[k] = Object.assign({}, cart.members[k], { items: (cart.members[k].items || []).slice() });
+    for (const x of sh) {
+      const keys = x.keys.filter(k => ms[k] ? ms[k].status !== 'out' : true);
+      if (!keys.length) continue;
+      const total = round2(num(x.price) * (num(x.qty) || 1));
+      const part = Math.floor(total / keys.length * 100) / 100;
+      let left = round2(total - part * keys.length);
+      keys.forEach(k => {
+        if (!ms[k]) ms[k] = { name: k, status: 'in', items: [] };
+        const v = round2(part + left); left = 0;
+        ms[k].items.push({ id: 'sh_' + x.id, name: x.name, price: v, qty: 1, shared: x.id, sharedN: keys.length, sharedTotal: total, sharedQty: num(x.qty) || 1 });
+      });
+    }
+    return Object.assign({}, cart, { members: ms });
+  }
   function eaters(cart) {
+    cart = withShared(cart);
     const ms = cart.members || {};
     return Object.keys(ms).filter(k => ms[k].status !== 'out' && memberSubtotal(ms[k]) > 0);
   }
@@ -344,6 +366,7 @@
      cart.estimate = { delivery, service, taxPct, tip } — typical charges saved with the restaurant.
      Returns the expected share of `key` (pass extraSub to preview adding an item). */
   function estimateFor(cart, key, extraSub) {
+    cart = withShared(cart);
     const e = Object.assign({ delivery: 0, service: 0, servicePct: 0, taxPct: 0, tip: 0 }, cart.estimate || {});
     const ms = cart.members || {};
     const subs = {};
@@ -369,6 +392,7 @@
   const DEFAULT_SPLIT = { delivery: 'equal', service: 'share', tax: 'share', tip: 'equal', shortage: 'equal', discount: 'share', other: 'equal' };
 
   function computeBill(cart, prevBalances) {
+    cart = withShared(cart);
     const ms = cart.members || {};
     const charges = (cart.charges || []).filter(c => num(c.amount) !== 0);
     const rows = eaters(cart).map(k => ({
@@ -378,17 +402,24 @@
     }));
     const food = round2(rows.reduce((s, r) => s + r.subtotal, 0));
     const n = rows.length;
+    // host options: the host can stay out of the charges (the others share them) and/or take a fee per item
+    const hostIn = rows.some(r => r.key === cart.ownerId);
+    const exempt = !!cart.hostExempt && hostIn && n > 1;
+    const payers = exempt ? rows.filter(r => r.key !== cart.ownerId) : rows;
+    const payersFood = round2(payers.reduce((s, r) => s + r.subtotal, 0));
     let chargesTotal = 0;
     for (const c of charges) {
       const sign = c.kind === 'discount' ? -1 : 1;
       const amount = round2(num(c.amount)) * sign;
       chargesTotal += amount;
       let split = c.split || DEFAULT_SPLIT[c.kind] || 'equal';
-      if (split === 'person' && !rows.some(r => r.key === c.person)) split = 'equal';
+      if (split === 'person' && !payers.some(r => r.key === c.person)) split = 'equal';
+      if (split === 'share' && payersFood <= 0) split = 'equal';
       for (const r of rows) {
         let part = 0;
-        if (split === 'equal') part = amount / Math.max(1, n);
-        else if (split === 'share') part = food > 0 ? amount * r.subtotal / food : 0;
+        if (exempt && r.key === cart.ownerId) part = 0;
+        else if (split === 'equal') part = amount / Math.max(1, payers.length);
+        else if (split === 'share') part = amount * r.subtotal / payersFood;
         else if (split === 'person') part = r.key === c.person ? amount : 0;
         part = round2(part);
         if (part !== 0) r.lines.push({ id: c.id, kind: c.kind, label: c.label, value: part });
@@ -398,9 +429,20 @@
     for (const r of rows) r.exact = round2(r.subtotal + r.lines.reduce((s, l) => s + l.value, 0));
     rows.sort((a, b) => b.subtotal - a.subtotal || a.name.localeCompare(b.name));
     const grand = round2(food + chargesTotal);
-    if (rows.length) { // piaster leftovers from splitting go to the biggest order
+    if (rows.length) { // piaster leftovers from splitting go to the biggest order that shares the charges
       const diff = round2(grand - rows.reduce((s, r) => s + r.exact, 0));
-      if (diff) rows[0].exact = round2(rows[0].exact + diff);
+      const to = rows.find(r => !(exempt && r.key === cart.ownerId)) || rows[0];
+      if (diff) to.exact = round2(to.exact + diff);
+    }
+    const fee = round2(num(cart.hostFee));
+    let hostFees = 0;
+    if (fee > 0) for (const r of rows) {
+      if (r.key === cart.ownerId) continue;
+      const q = r.items.reduce((s, it) => s + num(it.qty), 0);
+      const v = round2(fee * q);
+      if (!v) continue;
+      r.lines.push({ id: 'hostFee', kind: 'hostFee', label: cart.hostFeeLabel || 'Host fee', value: v, perItem: fee, qty: q });
+      r.exact = round2(r.exact + v); hostFees = round2(hostFees + v);
     }
     const payments = cart.payments || {};
     for (const r of rows) {
@@ -420,7 +462,7 @@
     }
     const collected = round2(rows.reduce((s, r) => s + r.total, 0));
     const paidSum = round2(rows.reduce((s, r) => s + r.paid, 0));
-    return { rows, food, chargesTotal, grand, collected, extra: round2(collected - grand), paidSum, people: n };
+    return { rows, food, chargesTotal, grand, collected, extra: round2(collected - grand - hostFees), hostFees, exempt, paidSum, people: n };
   }
 
   /* Running balances between each person and each host, across placed orders.
@@ -476,6 +518,15 @@
         row.who.push({ name: m.name, qty });
       }
     }
+    for (const x of cart.shared || []) {   // shared items are ordered once, for the table
+      const qty = num(x.qty) || 1;
+      if (num(x.price) <= 0 || !(x.keys || []).length) continue;
+      const key = x.name.trim() + '|' + num(x.price) + '|';
+      if (!map.has(key)) map.set(key, { name: x.name.trim(), price: num(x.price), note: '', qty: 0, who: [], custom: false });
+      const row = map.get(key);
+      row.qty += qty; row.shared = true;
+      row.who.push({ name: x.keys.map(k => (ms[k] && ms[k].name) || k).join('+'), qty });
+    }
     const lines = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'ar') || a.note.localeCompare(b.note));
     lines.forEach(l => { l.total = round2(l.qty * l.price); });
     return { lines, pieces: lines.reduce((s, l) => s + l.qty, 0), total: round2(lines.reduce((s, l) => s + l.total, 0)) };
@@ -492,7 +543,7 @@
     return { counts, leader: order[0] || null, total: Object.keys(cart.votes || {}).length };
   }
 
-  const api = { parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, computeBill, balances, prevFor, aggregate, tallyVotes, DEFAULT_SPLIT };
+  const api = { withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, computeBill, balances, prevFor, aggregate, tallyVotes, DEFAULT_SPLIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TarweeqaCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

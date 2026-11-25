@@ -88,6 +88,31 @@
     async register(phone, name, data) { this.saveProfile(Object.assign({ name, phone }, data || {})); return { uid: this.uid(), existing: false, person: { name, phone, data } }; }
     async saveProfileRemote() { }
     async priceHistory(gid, restName) { return clone((this.data.prices || {})[restName] || []); }
+    async saveReceipt(gid, r) {
+      const list = (this.data.receipts = this.data.receipts || []);
+      const ex = r.orderNo && list.find(x => x.restName === r.restName && x.orderNo === r.orderNo);
+      if (ex) return { id: ex.id, dup: true };
+      const sig = x => JSON.stringify([(x.parsed || {}).items, (x.parsed || {}).total]);
+      const same = !r.orderNo && list.find(x => x.restName === r.restName && !x.orderNo && sig(x) === sig(r));
+      if (same) return { id: same.id, dup: true };
+      const id = rid();
+      list.push({ id, gid, restName: r.restName, cartId: r.cartId || null, orderNo: r.orderNo || null, at: r.at, parsed: r.parsed, image: !!r.image, ms: Date.now() });
+      if (r.image) { try { localStorage.setItem('tarweeqa.rimg.' + id, r.image); } catch (e) { list[list.length - 1].image = false; } }
+      const P = (this.data.prices = this.data.prices || {}); const rows = (P[r.restName] = P[r.restName] || []);
+      for (const it of (r.parsed && r.parsed.items) || []) {
+        if (it.unit == null || it.nameUnsure || (it.unsure && !it.qtyInferred)) continue;
+        const i = rows.findIndex(x => x.item === it.name && x.at === r.at); if (i >= 0) rows.splice(i, 1);
+        rows.push({ item: it.name, price: it.unit, at: r.at, source: (r.parsed && r.parsed.kind) || 'receipt' });
+      }
+      rows.sort((a, b) => (a.at || 0) - (b.at || 0));
+      this.persist();
+      return { id, dup: false };
+    }
+    async receipts(gid, restName) {
+      return (this.data.receipts || []).filter(x => x.gid === gid && x.restName === restName).sort((a, b) => b.at - a.at || b.ms - a.ms)
+        .map(x => ({ id: x.id, at: x.at, orderNo: x.orderNo, cartId: x.cartId, ms: x.ms, items: ((x.parsed || {}).items || []).length, total: (x.parsed || {}).total, hasImage: !!x.image }));
+    }
+    async receipt(gid, id) { const x = (this.data.receipts || []).find(r => r.id === id); return x ? clone({ id: x.id, at: x.at, orderNo: x.orderNo, cartId: x.cartId, restName: x.restName, parsed: x.parsed, image: x.image ? localStorage.getItem('tarweeqa.rimg.' + x.id) : null }) : null; }
     async invoice(gid, cid, key, secret) {
       const c = this.data.carts[cid];
       if (!c || c.invoiceKey !== secret || !(c.invoices || {})[key]) throw new Error('invoice not found');
@@ -196,6 +221,9 @@
     }
     saveProfileRemote(name, data) { return this.rpc('tq_save_profile', { p_name: name, p_data: data || {} }); }
     priceHistory(gid, restName) { return this.rpc('tq_price_history', { p_gid: gid, p_rest_name: restName }); }
+    saveReceipt(gid, r) { return this.rpc('tq_save_receipt', { p_gid: gid, p_cart_id: r.cartId || null, p_rest_name: r.restName, p_order_no: r.orderNo || '', p_at: r.at, p_parsed: r.parsed, p_image: r.image || null }); }
+    receipts(gid, restName) { return this.rpc('tq_receipts_list', { p_gid: gid, p_rest_name: restName }); }
+    receipt(gid, id) { return this.rpc('tq_receipt_get', { p_gid: gid, p_id: id }); }
     invoice(gid, cid, key, secret) { return this.rpc('tq_invoice', { p_gid: gid, p_cid: cid, p_key: key, p_secret: secret }, true); }
     static nulls(patch) { const o = {}; for (const k of Object.keys(patch)) o[k] = patch[k] === undefined ? null : patch[k]; return o; }
 

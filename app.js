@@ -16,6 +16,8 @@
     payMethod: {}, confirmKey: null, dirty: false, booted: false, fatal: null,
     pending: null,   // {gid, cid} from an invite / cart link
     history: {},     // restaurant name → price history rows
+    rlist: {},       // restaurant name → saved receipts (no pictures)
+    rview: null,     // the receipt open in the viewer
     sendQ: null,     // { cartId, keys, i } — sending invoices one by one
     invoiceView: null // standalone invoice page data
   };
@@ -172,7 +174,7 @@
       home: viewHome, newOrder: viewNewOrder, cart: viewCart, restaurants: viewRestaurants,
       restaurant: viewRestaurantEdit, money: viewMoney, group: viewGroup, profile: viewProfile
     }[r] || viewHome)();
-    return shell(body);
+    return shell(body) + receiptModal();
   }
 
   function shell(body) {
@@ -278,6 +280,7 @@
         <h1>${esc(hour < 12 ? t('morning') : t('hello'))}${comma()}${esc(S.profile.name)}</h1>
         <p class="muted">${esc(t('tagline'))}</p>
       </section>
+      ${collectNag()}
       ${active.length ? `<section class="stack">${active.map(activeCard).join('')}</section>` : ''}
       <button class="${active.length ? 'secondary' : 'primary'} block big" data-act="nav" data-to="newOrder">${plusIcon()} ${esc(active.length ? t('anotherOrder') : t('newOrder'))}</button>
       ${moneySummary()}
@@ -625,9 +628,50 @@
     return `<section class="stack">
         ${picker}${attend}${estBox}${repeat}
         <div class="section-head"><h2>${esc(forOther ? t('itemsOf', { name: who }) : t('myItems'))}</h2></div>
-        ${myList}${doneBlock}
-      </section>${menu}`;
+        ${myList}${mySharedLines(c, key)}${doneBlock}
+      </section>${host && st !== 'settled' ? sharedPanel(c) : ''}${menu}`;
   }
+
+  /* ---------- shared items: one plate or bottle split between chosen people ---------- */
+  function mySharedLines(c, key) {
+    const mine = (c.shared || []).filter(x => (x.keys || []).includes(key));
+    if (!mine.length) return '';
+    const exp = C.withShared(c).members[key] || { items: [] };
+    return `<ul class="my-items shared-mine">${mine.map(x => {
+      const part = (exp.items || []).find(i => i.shared === x.id);
+      return `<li><div class="mi-top"><span class="mi-name">🤝 ${esc(x.name)} <small class="tag">${esc(t('sharedWith', { n: x.keys.length }))}</small></span><span class="mi-price tnum">${esc(money(part ? part.price : 0))}</span></div></li>`;
+    }).join('')}</ul>`;
+  }
+  function sharedPanel(c) {
+    const ppl = people(c);
+    const keys = Object.keys(ppl).filter(k => personStatus(c, k) !== 'out');
+    const anyIn = keys.some(k => (c.members || {})[k]);
+    const inCart = k => !anyIn || !!(c.members || {})[k];   // default: the people already in this order
+    const list = (c.shared || []).map(x => {
+      const tot = C.round2(C.num(x.price) * (C.num(x.qty) || 1));
+      return `<li><span><b>${esc((C.num(x.qty) > 1 ? x.qty + '× ' : '') + x.name)}</b> <span class="tnum">${esc(money(tot))}</span>
+        <small class="muted">÷ ${x.keys.length} = <span class="tnum">${esc(C.fmtMoney(C.round2(tot / x.keys.length)))}</span> · ${esc(x.keys.map(k => (ppl[k] || {}).name || '?').join(comma()))}</small></span>
+        <button class="icon-btn" data-act="delShared" data-id="${esc(x.id)}" aria-label="${esc(t('delete'))}">×</button></li>`;
+    }).join('');
+    const menuNames = (c.menu || []).map(i => `<option value="${esc(i.name)}"></option>`).join('');
+    return `<details class="panel shared"${(c.shared || []).length || S.sharedOpen ? ' open' : ''}>
+      <summary>🤝 ${esc(t('sharedTitle'))}${(c.shared || []).length ? ` <small class="muted">(${c.shared.length})</small>` : ''}</summary>
+      <p class="muted small-text">${esc(t('sharedHint'))}</p>
+      ${list ? `<ul class="shared-list">${list}</ul>` : ''}
+      <form class="form" data-submit="sharedItem" novalidate>
+        <div class="grid3">
+          <label class="field"><span>${esc(t('itemName'))}</span><input id="sh-name" name="name" list="sh-menu" data-change="sharedName" placeholder="${esc(t('sharedPh'))}"></label>
+          <label class="field"><span>${esc(t('price'))}</span><input id="sh-price" name="price" inputmode="decimal" class="tnum"></label>
+          <label class="field"><span>${esc(t('qty'))}</span><input id="sh-qty" name="qty" inputmode="numeric" class="tnum" value="1"></label>
+        </div>
+        <datalist id="sh-menu">${menuNames}</datalist>
+        <p class="label">${esc(t('sharedWho'))} <button type="button" class="link-btn" data-act="shAll">${esc(t('all'))}</button> <button type="button" class="link-btn" data-act="shNone">${esc(t('none'))}</button></p>
+        <div class="sh-people">${keys.map(k => `<label class="chip-check"><input type="checkbox" name="who" value="${esc(k)}"${inCart(k) ? ' checked' : ''}><span>${esc(ppl[k].name)}</span></label>`).join('')}</div>
+        <button class="secondary block" type="submit">${plusIcon()} ${esc(t('sharedAdd'))}</button>
+      </form>
+    </details>`;
+  }
+
 
   /* names of items across all the group's restaurants, for typing items that aren't on today's menu */
   function catalogNames(c) {
@@ -692,6 +736,15 @@
       <ul class="people">${rows}</ul>
       ${host && open && late.length ? wa(waLink('', t('msgRemindGroup', { rest: c.restaurant.name, time: fmtTime(c.closesAt), names: late.map(k => ppl[k].name).join(comma()), link: cartLink(c) })), t('remindGroup'), 'block') : ''}
       ${isLocal() && host ? `<p class="muted small-text">${esc(t('demoWaNote'))}</p>` : ''}
+      ${host && st !== 'settled' ? `<form class="panel form add-person" data-submit="cartPerson" novalidate>
+        <p class="label">➕ ${esc(t('addPersonTitle'))}</p>
+        <p class="muted small-text">${esc(t('addPersonHint'))}</p>
+        <div class="grid2">
+          <label class="field"><span>${esc(t('personName'))}</span><input id="cp-name" name="name" autocomplete="off"></label>
+          <label class="field"><span>${esc(t('personPhoneOpt'))}</span><input id="cp-phone" name="phone" type="tel" dir="ltr" autocomplete="off"></label>
+        </div>
+        <button class="secondary block" type="submit">${esc(t('addPersonBtn'))}</button>
+      </form>` : ''}
       ${host ? `<section class="panel controls">
         <p class="label">${esc(t('ownerControls'))}</p>
         <div class="btn-row">
@@ -786,6 +839,7 @@
       </li>`).join('')}</ul>` : ''}
       <div class="quick-add">${KINDS.map(k => `<button type="button" class="chip-btn" data-act="addCharge" data-kind="${k}">+ ${esc(t('kind_' + k))}</button>`).join('')}</div>
       <label class="check"><input type="checkbox" id="round-up" data-change="roundUp" ${c.roundUp ? 'checked' : ''}><span>${esc(t('roundUp'))}</span></label>
+      ${hostOptions(c)}
     </section>`;
   }
 
@@ -1033,17 +1087,22 @@
         </div>
       </section>
 
+      ${!d.items.length ? `<section class="panel setup">
+        <p class="label">${esc(t('setupTitle'))}</p>
+        <ol class="steps-mini"><li>${esc(t('setupStep1'))}</li><li>${esc(t('setupStep2'))}</li><li>${esc(t('setupStep3'))}</li><li>${esc(t('setupStep4'))}</li></ol>
+      </section>` : ''}
       <section class="panel shots">
-        <p class="label">${esc(t('shotsTitle'))}</p>
-        <p class="muted small-text">${esc(t('shotsOrReceipt'))}</p>
-        <ol class="steps-mini"><li>${esc(t('shotsStep1'))}</li><li>${esc(t('shotsStep2'))}</li><li>${esc(t('shotsStep3'))}</li></ol>
+        <p class="label">${esc(d.items.length ? t('updateTitle') : t('shotsTitle'))}</p>
+        <p class="muted small-text">${esc(d.items.length ? t('updateHint') : t('menuShotsHint'))}</p>
         <label class="primary block file-btn${S.ocr && S.ocr.busy ? ' busy' : ''}">
           <input type="file" id="shots" accept="image/*" multiple data-change="shots">
-          ${esc(S.ocr && S.ocr.busy ? t('shotsBusy') : t('shotsPick'))}
+          ${esc(S.ocr && S.ocr.busy ? t('shotsBusy') : d.items.length ? t('shotsPick') : '📷 ' + t('pickMenuShots'))}
         </label>
+        ${!d.items.length ? `<button class="secondary block" data-act="manualMenu">✍️ ${esc(t('manualMenu'))}</button>` : ''}
         <p class="ocr-status small-text${S.ocr && S.ocr.error ? ' err' : ''}" id="ocr-status"${S.ocr && S.ocr.msg ? '' : ' hidden'}>${esc(S.ocr ? S.ocr.msg : '')}</p>
-        ${S.ocr && S.ocr.thumbs && S.ocr.thumbs.length ? `<div class="thumbs">${S.ocr.thumbs.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt=""></a>`).join('')}</div>` : ''}
+        ${savedReceipts(d.name)}
       </section>
+      ${priceCompare(d)}
 
       ${S.restaurants.filter(r => r.id !== d.id && (r.items || []).length).length ? `<section class="panel copy-items">
         <p class="label">${esc(t('copyItemsTitle'))}</p>
@@ -1106,6 +1165,12 @@
         <p class="form-error" id="p-err" hidden></p>
         <button class="primary block" type="submit">${esc(t('save'))}</button>
       </form>
+      <section class="panel form">
+        <p class="label">👤 ${esc(t('hostOptsProfile'))}</p>
+        <p class="muted small-text">${esc(t('hostOptsProfileHint'))}</p>
+        <label class="check"><input type="checkbox" id="ph-exempt" data-change="profHostExempt" ${p.hostExempt ? 'checked' : ''}><span>${esc(t('hostExemptLbl'))}</span></label>
+        <label class="field inline-field"><span>${esc(t('hostFeeLbl'))}</span><input id="ph-fee" class="tnum" inputmode="decimal" data-change="profHostFee" value="${C.num(p.hostFee) ? esc(p.hostFee) : ''}" placeholder="0"></label>
+      </section>
       <section class="panel">
         <p class="label">${esc(t('language'))}</p>
         <div class="btn-row"><button class="${S.lang === 'ar' ? 'primary' : 'secondary'}" data-act="setLang" data-lang="ar">العربية</button><button class="${S.lang === 'en' ? 'primary' : 'secondary'}" data-act="setLang" data-lang="en">English</button></div>
@@ -1166,18 +1231,18 @@
     },
     lang: () => setLang(S.lang === 'ar' ? 'en' : 'ar'),
     setLang: el => setLang(el.dataset.lang),
-    openCart: el => go('cart', { id: el.dataset.id, tab: 'mine' }),
+    openCart: el => go('cart', { id: el.dataset.id, tab: el.dataset.tab || 'mine' }),
     tab: el => { S.route.tab = el.dataset.tab; render(true); },
     copy: el => copyText(el.dataset.text),
     switchGroup: el => setGroup(el.dataset.id),
     joinGroup: () => joinPending(),
 
     /* restaurants */
-    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', fees: {}, items: [] }; S.ocr = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : 'restaurants' }); },
+    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', fees: {}, items: [] }; S.ocr = null; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : 'restaurants' }); },
     editRestaurant: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r) return;
       S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.ocr = null;
-      loadHistory(r.name, true);
+      loadHistory(r.name, true); loadReceipts(r.name);
       go('restaurant', { from: 'restaurants' });
     },
     draftDelItem: el => { syncDraft(); S.draft.items = S.draft.items.filter(i => i.id !== el.dataset.id); render(true); },
@@ -1203,8 +1268,10 @@
       if (!d.name.trim()) return toast(t('errRestName'), 'warn');
       if (!d.items.length) return toast(t('errNoItems'), 'warn');
       d.items = d.items.map(({ fresh, oldPrice, ...it }) => it);
+      delete d.priceSource;
       const id = await guard(S.store.saveRestaurant(S.gid, d));
       S.ocr = null;
+      if (id && S.pendingMenu && S.store.saveReceipt) { const pm = S.pendingMenu; S.pendingMenu = null; S.store.saveReceipt(S.gid, Object.assign({ restName: d.name }, pm)).catch(e => console.warn(e)); }
       if (!id) return;
       toast(t('saved'));
       if (S.route.from === 'newOrder') { if (!S.sel.includes(id)) S.sel.push(id); go('newOrder'); }
@@ -1323,10 +1390,19 @@
     settle: () => patch(curCart(), { stage: 'settled' }),
     applyReceipt: () => applyReceipt(),
     issueInvoices: async () => { const c = curCart(); const keys = await issueInvoices(c); startSending(c, keys); },
+    remindUnpaid: el => {
+      const c = el.dataset.cart ? cartById(el.dataset.cart) : curCart(); if (!c) return;
+      const keys = unpaidRows(c).map(r => r.key);
+      if (!keys.length) return toast(t('allPaidNow'));
+      if (curCart() !== c || S.route.tab !== 'bill') go('cart', { id: c.id, tab: 'bill' });
+      S.sendQ = { cartId: c.id, keys, i: 0, mode: 'remind' };
+      render(true);
+      setTimeout(() => { const el2 = document.querySelector('.sender'); if (el2) el2.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+    },
     sendNext: el => {
       const q = S.sendQ; if (!q) return;
       const c = cartById(q.cartId);
-      if (c && el.dataset.key) patch(c, { ['invoices.' + el.dataset.key + '.sentAt']: Date.now() });
+      if (c && el.dataset.key) patch(c, q.mode === 'remind' ? { ['reminded.' + el.dataset.key]: Date.now() } : { ['invoices.' + el.dataset.key + '.sentAt']: Date.now() });
       q.i++; if (q.i >= q.keys.length) { toast(t('allSent')); S.sendQ = null; }
       render(true);
     },
@@ -1341,6 +1417,12 @@
     closeInvoice: () => { const b = S.invoiceView && S.invoiceView.back; S.invoiceView = null; if (b) go(b.name, b); else render(true); },
     copyInvoiceLink: el => copyText(el.dataset.text),
     openTalabat: () => openTalabatApp(),
+    viewReceipt: el => openReceipt(el.dataset.id),
+    delShared: el => { const c = curCart(); patch(c, { shared: (c.shared || []).filter(x => x.id !== el.dataset.id) }); },
+    shAll: () => document.querySelectorAll('.sh-people input').forEach(i => { i.checked = true; }),
+    shNone: () => document.querySelectorAll('.sh-people input').forEach(i => { i.checked = false; }),
+    manualMenu: () => { const n = $('#ai-name'); if (n) { n.scrollIntoView({ behavior: 'smooth', block: 'center' }); n.focus(); } },
+    closeReceipt: () => { S.rview = null; render(true); },
     copyItems: () => {
       syncDraft();
       const src = S.restaurants.find(r => r.id === (S.copyFrom || ($('#copy-from') || {}).value));
@@ -1476,16 +1558,14 @@
     S.ocr = { busy: true, msg: '', thumbs: (S.ocr && S.ocr.thumbs) || [] };
     render(true);
     try {
-      const { lines, thumbs } = await ocrRead(files, status);
-      S.ocr.thumbs.push(...thumbs);
-      // each screenshot may be a different order: read them one by one
-      const parts = [[]];
-      for (const l of lines) { if (l.sep) parts.push([]); else parts[parts.length - 1].push(l); }
-      const receipts = parts.filter(p => p.length).map(p => C.parseReceipt(p)).filter(r => r.items.length);
+      const { lines } = await ocrRead(files, status);
+      // each screenshot may be a different order: read them one by one (one part per file)
+      const parts = [{ fi: 0, lines: [] }];
+      for (const l of lines) { if (l.sep) parts.push({ fi: parts.length, lines: [] }); else parts[parts.length - 1].lines.push(l); }
+      const receipts = parts.filter(p => p.lines.length).map(p => Object.assign(C.parseReceipt(p.lines), { fi: p.fi })).filter(r => r.items.length);
       if (receipts.length) {
         const seenOrders = new Set();
-        let updated = 0, added = 0, dup = 0, orders = 0, unsure = 0;
-        const pcts = [];
+        let updated = 0, added = 0, dup = 0, orders = 0, unsure = 0, older = 0, saved = 0, savedDup = 0;
         const other = [];
         if (!S.draft.name) {   // name the restaurant after the name most of these receipts show
           const counts = {};
@@ -1493,35 +1573,69 @@
           const top = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
           if (top) S.draft.name = top;
         }
+        const name = S.draft.name;
+        if (name) await loadHistory(name, true);
+        receipts.sort((a, b) => rcAt(a) - rcAt(b));   // oldest first: the newest receipt has the last word
+        let newest = null;
         for (const rc of receipts) {
           if (rc.orderNo) { if (seenOrders.has(rc.orderNo)) { dup++; continue; } seenOrders.add(rc.orderNo); }
-          if (rc.restaurant && S.draft.name && C.similarity(rc.restaurant, S.draft.name) < 0.34) { other.push(rc.restaurant); continue; }
+          if (rc.restaurant && name && C.similarity(rc.restaurant, name) < 0.34) { other.push(rc.restaurant); continue; }
           orders++;
           C.inferQty(rc, S.draft.items);
-          for (const it of rc.items) {
-            if (it.unit == null || it.nameUnsure || (it.unsure && !it.qtyInferred)) { unsure++; continue; }
-            const ex = S.draft.items.find(x => C.sameItem(x.name, it.name));
-            if (ex) { if (ex.price !== it.unit) { ex.oldPrice = ex.oldPrice || ex.price; ex.price = it.unit; ex.fresh = true; updated++; } }
-            else { S.draft.items.push({ id: rid(8), name: it.name, price: it.unit, category: '', fresh: true }); added++; }
+          if (name && S.store.saveReceipt) {
+            status(t('rcSaving'));
+            try {
+              const sv = await S.store.saveReceipt(S.gid, { restName: name, orderNo: rc.orderNo, at: rcAt(rc), parsed: stripRc(rc), image: await shrinkImages([files[rc.fi]]) });
+              if (sv && sv.dup) savedDup++; else saved++;
+            } catch (e) { console.warn(e); }
           }
-          for (const f of rc.fees) if (f.kind === 'delivery') S.draft.fees.delivery = f.amount;
-          if (rc.servicePct) pcts.push(rc.servicePct);
+          const res = takeNewest(S.draft.items, rc, name, '');
+          updated += res.updated; added += res.added; older += res.older; unsure += res.unsure;
+          if (!newest || rcAt(rc) >= rcAt(newest)) newest = rc;
         }
-        const dates = receipts.map(r => r.date ? Date.parse(r.date + 'T09:00:00') : 0).filter(Boolean);
-        S.draft.priceSource = { type: 'receipt', at: dates.length ? Math.max(...dates) : Date.now() };
-        if (pcts.length) { S.draft.fees.servicePct = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length * 10) / 10; S.draft.fees.service = 0; }
+        if (newest && rcAt(newest) >= (S.draft.feesAt || 0)) {
+          for (const f of newest.fees) if (f.kind === 'delivery') S.draft.fees.delivery = f.amount;
+          if (newest.servicePct) { S.draft.fees.servicePct = newest.servicePct; S.draft.fees.service = 0; }
+          S.draft.feesAt = rcAt(newest);
+        }
+        // keep it: the restaurant is saved right away, so a refresh loses nothing
+        if (name && S.draft.items.length) {
+          const keep = clone(S.draft); keep.items = keep.items.map(({ fresh, oldPrice, ...it }) => it); delete keep.priceSource;
+          const id = await guard(S.store.saveRestaurant(S.gid, keep));
+          if (id) S.draft.id = id;
+          loadHistory(name, true); loadReceipts(name);
+        }
         S.ocr.busy = false; S.ocr.error = false;
-        S.ocr.msg = t('receiptToMenu2', { o: orders, u: updated, a: added }) + (dup ? ' ' + t('receiptDup', { n: dup }) : '') + (unsure ? ' ' + t('receiptUnsure', { n: unsure }) : '') + (other.length ? ' ' + t('receiptOtherSkipped', { s: Array.from(new Set(other)).join(comma()) }) : '');
+        S.ocr.msg = t('receiptToMenu2', { o: orders, u: updated, a: added })
+          + (saved ? ' ' + t('rcSavedN', { n: saved }) : '') + (savedDup ? ' ' + t('rcDupN', { n: savedDup }) : '')
+          + (older ? ' ' + t('rcOlderN', { n: older }) : '')
+          + (dup ? ' ' + t('receiptDup', { n: dup }) : '') + (unsure ? ' ' + t('receiptUnsure', { n: unsure }) : '') + (other.length ? ' ' + t('receiptOtherSkipped', { s: Array.from(new Set(other)).join(comma()) }) : '');
       } else {
         const res = C.parseMenu(lines.map(lineText).join('\n'), { ocr: true });
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const at = today.getTime();   // a menu price counts from the start of the day: that day's receipt still wins
         const have = new Set(S.draft.items.map(i => C.normName(i.name) + '|' + i.price));
         let added = 0;
         for (const it of res.items) {
           const k = C.normName(it.name) + '|' + it.price;
           if (have.has(k)) continue;
           have.add(k);
-          S.draft.items.push({ id: rid(8), name: it.name, price: it.price, category: it.category, fresh: true });
+          const ex = S.draft.items.find(x => C.sameItem(x.name, it.name));
+          if (ex) { if (C.num(ex.price) !== it.price && at >= priceAt(S.draft.name, ex)) { ex.oldPrice = ex.oldPrice || ex.price; ex.price = it.price; ex.at = at; ex.fresh = true; added++; } continue; }
+          S.draft.items.push({ id: rid(8), name: it.name, price: it.price, category: it.category, fresh: true, at });
           added++;
+        }
+        const name = S.draft.name;
+        if (added && res.items.length) {
+          const menuRec = { kind: 'menu', items: res.items.map(i => ({ name: i.name, unit: i.price, qty: 1 })) };
+          if (name && S.store.saveReceipt) {
+            status(t('rcSaving'));
+            try { await S.store.saveReceipt(S.gid, { restName: name, at, parsed: menuRec, image: await shrinkImages(files) }); } catch (e) { console.warn(e); }
+            const keep = clone(S.draft); keep.items = keep.items.map(({ fresh, oldPrice, ...it }) => it); delete keep.priceSource;
+            const id = await guard(S.store.saveRestaurant(S.gid, keep));
+            if (id) S.draft.id = id;
+            loadHistory(name, true); loadReceipts(name);
+          } else S.pendingMenu = { at, parsed: menuRec, image: await shrinkImages(files) };
         }
         S.ocr.busy = false; S.ocr.error = !added;
         S.ocr.msg = added ? t('shotsDone', { n: added, m: files.length }) + (res.skipped.length ? ' ' + t('skippedLines', { s: res.skipped.slice(0, 6).join(' / ') }) : '') : t('shotsNone');
@@ -1561,10 +1675,19 @@
     S.rcpt = { cartId: c.id, busy: true, msg: '' };
     render(true);
     try {
-      const { lines, thumbs } = await ocrRead(files, status);
+      const { lines } = await ocrRead(files, status);
       const rc = C.parseReceipt(lines);
       C.inferQty(rc, c.menu || []);
-      S.rcpt = { cartId: c.id, busy: false, data: rc, thumbs, map: autoMatch(c, rc), fees: rc.fees.map(() => true), msg: rc.items.length ? '' : t('receiptNone'), error: !rc.items.length };
+      S.rcpt = { cartId: c.id, busy: false, data: rc, map: autoMatch(c, rc), fees: rc.fees.map(() => true), msg: rc.items.length ? '' : t('receiptNone'), error: !rc.items.length };
+      if (rc.items.length && S.store.saveReceipt) {
+        status(t('rcSaving'));
+        try {
+          const sv = await S.store.saveReceipt(S.gid, { cartId: c.id, restName: c.restaurant.name, orderNo: rc.orderNo, at: rcAt(rc), parsed: stripRc(rc), image: await shrinkImages(files) });
+          S.rcpt.id = sv && sv.id;
+          await patch(c, { receipt: { id: (sv && sv.id) || '', data: stripRc(rc), savedAt: Date.now() } });
+          S.rcpt.msg = t('rcKept');
+        } catch (e) { console.warn(e); }
+      }
     } catch (e) {
       console.warn(e);
       S.rcpt = { cartId: c.id, busy: false, error: true, msg: t('shotsFail') };
@@ -1572,7 +1695,12 @@
     render(true);
   }
   function receiptPanel(c) {
+    if ((!S.rcpt || S.rcpt.cartId !== c.id) && c.receipt && c.receipt.data && !(c.receiptAt >= c.receipt.savedAt)) {
+      const rd = c.receipt.data;   // read before, not applied yet: pick up where it stopped
+      S.rcpt = { cartId: c.id, busy: false, id: c.receipt.id, data: rd, map: autoMatch(c, rd), fees: (rd.fees || []).map(() => true), msg: t('rcKept') };
+    }
     const R = S.rcpt && S.rcpt.cartId === c.id ? S.rcpt : null;
+    const rid0 = (R && R.id) || (c.receipt && c.receipt.id);
     const head = `<section class="panel receipt">
       <p class="label">${esc(t('receiptTitle'))}</p>
       <p class="muted small-text">${esc(c.receiptAt ? t('receiptApplied', { when: fmtAgo(c.receiptAt) }) : t('receiptHint'))}</p>
@@ -1580,7 +1708,8 @@
         <input type="file" id="rcpt-file" accept="image/*" multiple data-change="receipt">
         ${esc(R && R.busy ? t('shotsBusy') : t('receiptPick'))}
       </label>
-      <p class="ocr-status small-text${R && R.error ? ' err' : ''}" id="rcpt-status"${R && R.msg ? '' : ' hidden'}>${esc(R ? R.msg : '')}</p>`;
+      <p class="ocr-status small-text${R && R.error ? ' err' : ''}" id="rcpt-status"${R && R.msg ? '' : ' hidden'}>${esc(R ? R.msg : '')}</p>
+      ${rid0 ? `<button class="ghost small" data-act="viewReceipt" data-id="${esc(rid0)}">🧾 ${esc(t('viewReceipt'))}</button>` : ''}`;
     if (!R || !R.data || !R.data.items.length) return head + `</section>`;
     const rc = R.data;
     const agg = C.aggregate(c).lines;
@@ -1637,20 +1766,166 @@
     // teach the restaurant: real prices, new items, usual charges
     const r = S.restaurants.find(x => x.id === c.restaurantId);
     if (r) {
+      await loadHistory(r.name, true);
       const items = clone(r.items || []);
-      for (const it of rc.items) {
-        if (it.unit == null || it.nameUnsure || (it.unsure && !it.qtyInferred)) continue;
-        const ex = items.find(x => C.sameItem(x.name, it.name));
-        if (ex) ex.price = it.unit; else items.push({ id: rid(8), name: it.name, price: it.unit, category: t('fromReceipts') });
-      }
+      const res = takeNewest(items, rc, r.name, t('fromReceipts'));
+      items.forEach(i => { delete i.fresh; delete i.oldPrice; });
       const fees = Object.assign({}, r.fees || {});
-      for (const f of rc.fees) if (f.kind === 'delivery') fees.delivery = f.amount;
-      if (rc.servicePct) { fees.servicePct = rc.servicePct; fees.service = 0; }
-      await guard(S.store.patchRestaurant(S.gid, r.id, { items, fees, lastOrderedAt: Date.now(), priceSource: { type: 'receipt', cartId: c.id, at: rc.date ? Date.parse(rc.date + 'T09:00:00') : Date.now() } }));
-      loadHistory(r.name, true);
+      const p = { items, lastOrderedAt: Date.now(), priceSource: null };
+      if (rcAt(rc) >= (r.feesAt || 0)) {
+        for (const f of rc.fees) if (f.kind === 'delivery') fees.delivery = f.amount;
+        if (rc.servicePct) { fees.servicePct = rc.servicePct; fees.service = 0; }
+        p.fees = fees; p.feesAt = rcAt(rc);
+      }
+      await guard(S.store.patchRestaurant(S.gid, r.id, p));
+      loadHistory(r.name, true); loadReceipts(r.name);
+      if (res.older) toast(t('rcOlderN', { n: res.older }));
     }
     S.rcpt = null;
     toast(t('receiptDone'));
+  }
+
+  /* ---------- collecting the money: who still owes on my orders ---------- */
+  function unpaidRows(c) {
+    return C.computeBill(c, prevFor(c)).rows.filter(r => !r.isHost && (r.state === 'unpaid' || r.state === 'partial') && r.remaining > 0.009);
+  }
+  function remindMessage(c, row) {
+    const link = c.invoices && c.invoices[row.key] && c.invoiceKey ? invoiceLink(c, row.key) : '';
+    return t('msgPayRemind2', { name: row.name, rest: c.restaurant.name, when: fmtAgo(c.createdAt), total: money(row.remaining) }) + (link ? '\n' + t('msgInvoiceLink', { link }) : '') + payLines(c.payInfo || {});
+  }
+  // the banner on the home page: money not collected yet, payments waiting for my OK
+  function collectNag() {
+    const mine = S.carts.filter(c => c.ownerId === me() && c.stage === 'ordered').sort((a, b) => b.createdAt - a.createdAt);
+    const out = [];
+    for (const c of mine) {
+      const bill = C.computeBill(c, prevFor(c));
+      const un = bill.rows.filter(r => !r.isHost && (r.state === 'unpaid' || r.state === 'partial') && r.remaining > 0.009);
+      const rep = bill.rows.filter(r => r.state === 'reported');
+      if (!un.length && !rep.length) continue;
+      const sum = C.round2(un.reduce((a, r) => a + r.remaining, 0));
+      const noInv = !c.invoices || !Object.keys(c.invoices).length;
+      out.push(`<div class="nag">
+        <p class="nag-title">💸 ${esc(t('nagTitle', { rest: c.restaurant.name, when: fmtAgo(c.createdAt) }))}</p>
+        ${un.length ? `<p>${esc(t('nagUnpaid', { n: un.length, a: money(sum) }))}: <b>${esc(un.map(r => r.name).join(comma()))}</b></p>` : ''}
+        ${rep.length ? `<p>${esc(t('nagReported', { s: rep.map(r => r.name).join(comma()) }))}</p>` : ''}
+        ${noInv ? `<p class="muted small-text">${esc(t('nagNoInvoices'))}</p>` : ''}
+        <div class="btn-row tight">
+          ${un.length ? `<button class="primary small" data-act="remindUnpaid" data-cart="${esc(c.id)}">🔔 ${esc(t('nagRemind'))}</button>` : ''}
+          <button class="secondary small" data-act="openCart" data-id="${esc(c.id)}" data-tab="bill">${esc(rep.length ? t('nagConfirm') : t('nagOpen'))}</button>
+        </div></div>`);
+    }
+    return out.length ? `<section class="stack nags">${out.join('')}</section>` : '';
+  }
+  function saveHostDefaults(o) {
+    Object.assign(S.profile, o);
+    if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
+    if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(S.profile.name, { instapay: S.profile.instapay, wallet: S.profile.wallet, hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee), hostAuto: !!S.profile.hostAuto }));
+  }
+  function hostOptions(c) {
+    const bill = C.computeBill(c, {});
+    const items = bill.rows.filter(r => r.key !== c.ownerId).reduce((a, r) => a + r.items.reduce((x, it) => x + C.num(it.qty), 0), 0);
+    return `<div class="host-opts">
+      <p class="label">👤 ${esc(t('hostOptsTitle'))}</p>
+      <label class="check"><input type="checkbox" id="host-exempt" data-change="hostExempt" ${c.hostExempt ? 'checked' : ''}><span>${esc(t('hostExemptLbl'))}</span></label>
+      <label class="field inline-field"><span>${esc(t('hostFeeLbl'))}</span><input id="host-fee" class="tnum" inputmode="decimal" data-change="hostFee" value="${C.num(c.hostFee) ? esc(c.hostFee) : ''}" placeholder="0"></label>
+      ${C.num(c.hostFee) > 0 ? `<p class="muted small-text tnum">${esc(t('hostFeeSum', { n: items, a: money(bill.hostFees || 0) }))}</p>` : ''}
+      <label class="check"><input type="checkbox" id="host-auto" data-change="hostAuto" ${S.profile.hostAuto ? 'checked' : ''}><span>${esc(t('hostAutoLbl'))}</span></label>
+    </div>`;
+  }
+
+  /* ---------- saved receipts: kept with their picture; the newest receipt sets the price ---------- */
+  function rcAt(rc) { const v = rc && rc.date ? Date.parse(rc.date + 'T09:00:00') : NaN; return isNaN(v) ? Date.now() : v; }
+  function stripRc(rc) { const { fi, ...o } = rc; return clone(o); }
+  function rcUsable(it) { return !(it.unit == null || it.nameUnsure || (it.unsure && !it.qtyInferred)); }
+  // the date the item's current price comes from
+  function priceAt(restName, it) {
+    let at = it.at || 0;
+    for (const r of S.history[restName] || []) if (r.at && r.at > at && C.sameItem(r.item, it.name) && Math.abs(C.num(r.price) - C.num(it.price)) < 0.005) at = r.at;
+    return at;
+  }
+  // apply one receipt to a menu: newer-or-same date replaces the price, an older one only goes to the history
+  function takeNewest(items, rc, restName, category) {
+    const at = rcAt(rc);
+    let updated = 0, added = 0, older = 0, unsure = 0;
+    for (const it of rc.items) {
+      if (!rcUsable(it)) { unsure++; continue; }
+      const ex = items.find(x => C.sameItem(x.name, it.name));
+      if (!ex) { items.push({ id: rid(8), name: it.name, price: it.unit, category: category || '', fresh: true, at }); added++; continue; }
+      if (at >= priceAt(restName, ex)) {
+        if (C.num(ex.price) !== it.unit) { ex.oldPrice = ex.oldPrice || ex.price; ex.price = it.unit; ex.fresh = true; updated++; }
+        ex.at = at;
+      } else older++;
+    }
+    return { updated, added, older, unsure };
+  }
+  // one light JPEG of the screenshot(s), stacked, to keep with the receipt
+  async function shrinkImages(files, maxW = 720, q = 0.62) {
+    const imgs = [];
+    for (const f of files) {
+      if (!f) continue;
+      const url = URL.createObjectURL(f);
+      try { imgs.push(await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; })); } catch (e) { }
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+    if (!imgs.length) return null;
+    const w = Math.min(maxW, Math.max(...imgs.map(i => i.naturalWidth)));
+    const hs = imgs.map(i => Math.round(i.naturalHeight * w / i.naturalWidth));
+    const c = document.createElement('canvas'); c.width = w; c.height = Math.min(14000, hs.reduce((a, b) => a + b, 0));
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    let y = 0; imgs.forEach((i, k) => { x.drawImage(i, 0, y, w, hs[k]); y += hs[k]; });
+    return c.toDataURL('image/jpeg', q);
+  }
+  async function loadReceipts(restName) {
+    if (!restName || !S.store.receipts) return;
+    try { S.rlist[restName] = (await S.store.receipts(S.gid, restName)) || []; } catch (e) { console.warn(e); }
+    scheduleRender();
+  }
+  const dayFmt = ms => new Date(ms).toLocaleDateString(S.lang === 'ar' ? 'ar-EG' : 'en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
+  function savedReceipts(restName) {
+    const list = S.rlist[restName] || [];
+    if (!list.length) return '';
+    return `<p class="label rl-head">${esc(t('receiptsSaved'))} <small class="muted">(${list.length})</small></p>
+      <ul class="rlist">${list.map(r => `<li><button class="row-link" data-act="viewReceipt" data-id="${esc(r.id)}">
+        <span>🧾 <b>${esc(r.at ? dayFmt(r.at) : '—')}</b>${r.orderNo ? ` <small class="muted" dir="ltr">#${esc(r.orderNo)}</small>` : ''}</span>
+        <small class="muted tnum">${esc(t('itemsCount', { n: r.items }))}${r.total != null ? ' · ' + esc(money(r.total)) : ''}</small></button></li>`).join('')}</ul>`;
+  }
+  async function openReceipt(id) {
+    S.rview = { id, busy: true }; render(true);
+    try { const r = await S.store.receipt(S.gid, id); S.rview = r ? Object.assign({ busy: false }, r) : null; if (!r) toast(t('invoiceMissing'), 'warn'); }
+    catch (e) { console.warn(e); S.rview = null; toast(t('shotsFail'), 'warn'); }
+    render(true);
+  }
+  function receiptModal() {
+    const R = S.rview; if (!R) return '';
+    const p = R.parsed || {};
+    return `<div class="rmodal" role="dialog" aria-modal="true"><div class="rmodal-box">
+      <div class="rmodal-head"><b>🧾 ${esc(R.restName || '')} ${R.at ? '· ' + esc(dayFmt(R.at)) : ''}</b>${R.orderNo ? ` <small class="muted" dir="ltr">#${esc(R.orderNo)}</small>` : ''}
+        <button class="icon-btn" data-act="closeReceipt" aria-label="${esc(t('close'))}">×</button></div>
+      ${R.busy ? `<p class="muted center">${esc(t('loading'))}</p>` : R.image ? `<img src="${esc(R.image)}" alt="">` : `<ul class="rm-items">${(p.items || []).map(i => `<li><span>${esc(i.qty + '× ' + i.name)}</span><b class="tnum">${i.unit == null ? '?' : esc(C.fmtMoney(i.unit))}</b></li>`).join('')}</ul>`}
+    </div></div>`;
+  }
+  // every receipt side by side: what each item cost on each date
+  function priceCompare(d) {
+    const rows = (S.history[d.name] || []).filter(r => r.at);
+    const day = ms => { const x = new Date(ms); x.setHours(0, 0, 0, 0); return x.getTime(); };
+    const dates = Array.from(new Set(rows.map(r => day(r.at)))).sort((a, b) => b - a).slice(0, 5);
+    if (dates.length < 2) return '';
+    const items = d.items.filter(it => rows.some(r => C.sameItem(r.item, it.name)));
+    if (!items.length) return '';
+    // one column per day; several receipts on one day → the last one counts
+    const cell = (it, dd) => { let best = null; for (const x of rows) if (day(x.at) === dd && C.sameItem(x.item, it.name) && (!best || x.at >= best.at)) best = x; return best ? C.num(best.price) : null; };
+    return `<details class="panel cmp"><summary>${esc(t('priceCompare'))} <small class="muted">${esc(t('priceCompareSub', { n: dates.length }))}</small></summary>
+      <div class="cmp-wrap"><table class="cmp-table tnum"><thead><tr><th>${esc(t('itemName'))}</th>${dates.map(a => `<th>${esc(dayFmt(a))}</th>`).join('')}</tr></thead>
+      <tbody>${items.map(it => {
+        const vals = dates.map(a => cell(it, a));
+        return `<tr><td>${esc(it.name)}</td>${vals.map((v, i) => {
+          if (v == null) return '<td class="muted">—</td>';
+          const prev = vals.slice(i + 1).find(x => x != null);
+          const cls = prev == null || prev === v ? '' : v > prev ? ' up' : ' down';
+          return `<td class="${cls.trim()}">${esc(C.fmtMoney(v))}${cls ? (cls === ' up' ? ' ▲' : ' ▼') : ''}</td>`;
+        }).join('')}</tr>`;
+      }).join('')}</tbody></table></div>
+      <p class="muted small-text">${esc(t('priceCompareHint'))}</p></details>`;
   }
 
   /* ---------- price history ---------- */
@@ -1666,9 +1941,12 @@
   function priceMove(restName, itemName, price) {
     const rows = (S.history[restName] || []).filter(r => C.sameItem(r.item, itemName));
     if (!rows.length) return null;
+    const same = r => Math.abs(C.num(r.price) - price) < 0.005;
     let idx = -1;
-    for (let i = rows.length - 1; i >= 0; i--) if (Math.abs(C.num(rows[i].price) - price) < 0.005) { idx = i; break; }
-    const before = idx > 0 ? rows[idx - 1] : (idx === -1 ? rows[rows.length - 1] : null);
+    for (let i = rows.length - 1; i >= 0; i--) if (same(rows[i])) { idx = i; break; }
+    let before = null;
+    if (idx === -1) before = rows[rows.length - 1];
+    else { let i = idx; while (i > 0 && same(rows[i - 1])) i--; before = i > 0 ? rows[i - 1] : null; }
     if (!before || Math.abs(C.num(before.price) - price) < 0.005) return null;
     return { prev: C.num(before.price), diff: C.round2(price - C.num(before.price)), at: before.at };
   }
@@ -1761,7 +2039,21 @@
         <td>${payChip(r, c)}${inv[r.key] ? `<button class="link-btn" data-act="previewInvoice" data-key="${esc(r.key)}">${esc(t('viewInvoice'))}</button>` : ''}</td>
       </tr>`).join('');
     let sender = '';
-    if (q) {
+    if (q && q.mode === 'remind') {
+      const key = q.keys[q.i], row = bill.rows.find(r => r.key === key);
+      if (row) {
+        const msg = remindMessage(c, row);
+        sender = `<div class="sender remind">
+          <div class="sender-top"><span class="tnum">🔔 ${esc(t('remindingN', { i: q.i + 1, n: q.keys.length }))}</span><button class="ghost small" data-act="stopSend">${esc(t('stop'))}</button></div>
+          <p><b>${esc(row.name)}</b> · <span class="tnum">${esc(money(row.remaining))}</span>${c.reminded && c.reminded[key] ? ` · <span class="muted">${esc(t('lastReminded', { t: fmtAgo(c.reminded[key]) }))}</span>` : ''}</p>
+          <div class="btn-row">
+            ${row.phone ? `<a class="wa big" data-act="sendNext" data-keep="1" data-key="${esc(key)}" href="${esc(waLink(row.phone, msg))}" target="_blank" rel="noopener">${waIcon()} ${esc(t('remindTo', { name: row.name }))}</a>`
+              : `<button class="secondary" data-act="copyInvoiceLink" data-text="${esc(msg)}">${esc(t('copyInvoiceMsg'))}</button><button class="primary" data-act="sendNext" data-key="${esc(key)}">${esc(t('next'))}</button>`}
+            <button class="ghost small" data-act="skipSend">${esc(t('skip'))}</button>
+          </div>
+        </div>`;
+      }
+    } else if (q) {
       const key = q.keys[q.i], one = (c.invoices || {})[key];
       if (one) {
         const phone = one.phone || ((c.members || {})[key] || {}).phone;
@@ -1784,7 +2076,9 @@
         <tfoot><tr><td colspan="2">${esc(t('colTotal'))}</td><td class="num tnum">${esc(C.fmtMoney(bill.food))}</td><td class="num tnum">${esc(C.fmtMoney(bill.chargesTotal))}</td><td class="num tnum"><b>${esc(C.fmtMoney(bill.collected))}</b></td><td></td></tr></tfoot>
       </table></div>
       ${sender || `<button class="primary block big" data-act="issueInvoices">${esc(issued ? (stale ? t('reissueSend') : t('sendAgain')) : t('issueSend'))}</button>
-        ${issued ? `<p class="muted small-text">${esc(t('issuedAt', { n: issued, t: fmtTime(c.invoicesAt || Date.now()) }))}${stale ? ' ' + esc(t('staleNote')) : ''}</p>` : `<p class="muted small-text">${esc(t('issueHint'))}</p>`}`}
+        ${issued ? `<p class="muted small-text">${esc(t('issuedAt', { n: issued, t: fmtTime(c.invoicesAt || Date.now()) }))}${stale ? ' ' + esc(t('staleNote')) : ''}</p>` : `<p class="muted small-text">${esc(t('issueHint'))}</p>`}
+        ${(() => { const un = bill.rows.filter(r => !r.isHost && (r.state === 'unpaid' || r.state === 'partial')); return un.length ? `<button class="secondary block remind-btn" data-act="remindUnpaid">🔔 ${esc(t('remindUnpaid', { n: un.length }))}</button>
+          <p class="muted small-text">${esc(t('remindUnpaidHint', { s: un.map(r => r.name).join(comma()) }))}</p>` : ''; })()}`}
     </section>`;
   }
   function invoiceData(c, key) {
@@ -1863,7 +2157,7 @@
     document.querySelectorAll('[data-draft]').forEach(inp => { S.draft[inp.dataset.draft] = inp.value.trim(); });
     document.querySelectorAll('[data-fee]').forEach(inp => { S.draft.fees[inp.dataset.fee] = C.round2(C.num(inp.value)); });
     document.querySelectorAll('[data-change="itemName"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && inp.value.trim()) it.name = inp.value.trim(); });
-    document.querySelectorAll('[data-change="itemPrice"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && C.num(inp.value) > 0) it.price = C.round2(C.num(inp.value)); });
+    document.querySelectorAll('[data-change="itemPrice"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && C.num(inp.value) > 0 && C.round2(C.num(inp.value)) !== C.num(it.price)) { it.price = C.round2(C.num(inp.value)); it.at = Date.now(); } });
   }
   function syncNewOrder() { /* selections live in S.sel; nothing else to keep */ }
 
@@ -1898,6 +2192,12 @@
     },
     chPerson: el => { const c = curCart(); const list = clone(c.charges); list[+el.dataset.i].person = el.value; patch(c, { charges: list }); },
     roundUp: el => patch(curCart(), { roundUp: el.checked }),
+    sharedName: el => { const c = curCart(); const it = (c.menu || []).find(i => C.sameItem(i.name, el.value)); const pr = $('#sh-price'); if (it && pr && !pr.value) pr.value = it.price; },
+    hostExempt: el => { patch(curCart(), { hostExempt: el.checked }); if (S.profile.hostAuto) saveHostDefaults({ hostExempt: el.checked }); },
+    hostFee: el => { const v = Math.max(0, C.round2(C.num(el.value))); patch(curCart(), { hostFee: v, hostFeeLabel: t('hostFeeLabel') }); if (S.profile.hostAuto) saveHostDefaults({ hostFee: v }); },
+    hostAuto: el => { const c = curCart(); saveHostDefaults(el.checked ? { hostAuto: true, hostExempt: !!c.hostExempt, hostFee: C.num(c.hostFee) } : { hostAuto: false, hostExempt: false, hostFee: 0 }); toast(el.checked ? t('hostAutoOn') : t('hostAutoOff')); },
+    profHostExempt: el => saveHostDefaults({ hostExempt: el.checked, hostAuto: el.checked || C.num(S.profile.hostFee) > 0 }),
+    profHostFee: el => { const v = Math.max(0, C.round2(C.num(el.value))); saveHostDefaults({ hostFee: v, hostAuto: v > 0 || !!S.profile.hostExempt }); },
     payInfo: el => patch(curCart(), { ['payInfo.' + el.dataset.k]: el.value.trim() }),
     shots: el => readScreenshots(Array.from(el.files || [])),
     receipt: el => readReceipt(Array.from(el.files || [])),
@@ -1949,6 +2249,21 @@
       if (gid) { setGroup(gid); go('group'); }
     },
     renameGroup: form => { const n = form.name.value.trim(); if (n) guard(S.store.patchGroup(S.gid, { name: n })).then(() => toast(t('saved'))); },
+    cartPerson: form => {
+      const c = curCart(); if (!c) return;
+      const name = form.name.value.trim(), phone = form.phone.value.trim();
+      if (!name) return toast(t('errName'), 'warn');
+      if (phone && !C.isValidPhone(phone)) return toast(t('errPhone'), 'warn');
+      const ppl = people(c);
+      const ex = Object.keys(ppl).find(k => (phone && ppl[k].phone && C.waPhone(ppl[k].phone) === C.waPhone(phone)) || C.normName(ppl[k].name) === C.normName(name));
+      const k = ex || 'g_' + rid(8);
+      const m = (c.members || {})[k];
+      if (!m || m.status === 'out') patch(c, { ['members.' + k]: Object.assign({ items: [] }, m || {}, { name: (ppl[k] || {}).name || name, phone: phone || (ppl[k] || {}).phone || '', status: 'in', guest: ex ? !!ppl[k].guest : true, at: Date.now() }) });
+      if (!ex) S.store.patchGroup(S.gid, { ['roster.' + k]: { name, phone, guest: true, joinedAt: Date.now() } }).catch(() => { });   // remembered for next time
+      form.reset();
+      S.actFor = k; S.route.tab = 'mine'; render(true); window.scrollTo(0, 0);
+      toast(t('personAdded', { name }));
+    },
     addGuest: form => {
       const name = form.name.value.trim(), phone = form.phone.value.trim();
       if (!name) return toast(t('errName'), 'warn');
@@ -1963,6 +2278,19 @@
       S.draft.items.push({ id: rid(8), name, price: C.round2(price), category });
       S._lastCat = category; render(true);
       const n = $('#ai-name'); if (n) n.focus();
+    },
+    sharedItem: form => {
+      const c = curCart(); if (!c) return;
+      const name = form.name.value.trim(), price = C.round2(C.num(form.price.value)), qty = Math.max(1, Math.round(C.num(form.qty.value) || 1));
+      const keys = Array.from(form.querySelectorAll('input[name=who]:checked')).map(i => i.value);
+      if (!name) return toast(t('errItemName'), 'warn');
+      if (!(price > 0)) return toast(t('sharedNeedPrice'), 'warn');
+      if (keys.length < 1) return toast(t('sharedNeedPeople'), 'warn');
+      const members = {};   // sharers who never opened the order still count as in
+      for (const k of keys) if (!(c.members || {})[k]) { const p = people(c)[k] || {}; members['members.' + k] = { name: p.name || k, phone: p.phone || '', status: 'in', items: [], done: true, guest: !!p.guest, at: Date.now() }; }
+      S.sharedOpen = true;
+      patch(c, Object.assign(members, { shared: [...(c.shared || []), { id: rid(6), name, price, qty, keys }] }));
+      toast(t('sharedAdded', { n: keys.length, a: money(C.round2(price * qty / keys.length)) }));
     },
     customItem: form => {
       const name = form.name.value.trim(), price = C.num(form.price.value);
@@ -1988,7 +2316,8 @@
         title: form.title.value.trim(), ownerId: uid, ownerName: S.profile.name, ownerPhone: S.profile.phone,
         createdAt: Date.now(), closesAt: close.getTime(),
         candidates: [], candidateInfo: {}, votes: {}, members: {}, payments: {}, charges: [], roundUp: true,
-        payInfo: { instapay, wallet }
+        payInfo: { instapay, wallet },
+        hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee) || 0, hostFeeLabel: t('hostFeeLabel')
       };
       const chosen = S.sel.map(id => S.restaurants.find(r => r.id === id)).filter(Boolean);
       if (chosen.length === 1) Object.assign(cart, snapshotOf(chosen[0]), { stage: 'ordering' });

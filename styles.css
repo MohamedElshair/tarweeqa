@@ -528,3 +528,48 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .inv-pay { margin: 14px 20px 0; padding: 12px; border-radius: 8px; background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
 .inv-foot { margin: 16px 20px 0; padding-top: 12px; border-top: 1px dashed var(--line); font-size: .78rem; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
 .inv-by { font-weight: 600; color: var(--accent); }
+
+/* saved receipts, viewer, price comparison */
+.rl-head { margin-top: 14px; }
+.rlist { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.rlist .row-link { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 1px solid var(--line, #e3e6e3); border-radius: 10px; background: var(--card, #fff); text-align: start; }
+.rmodal { position: fixed; inset: 0; z-index: 60; background: rgba(10,20,15,.55); display: flex; align-items: flex-start; justify-content: center; padding: 16px; overflow: auto; }
+.rmodal-box { background: #fff; border-radius: 14px; width: 100%; max-width: 520px; padding: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+.rmodal-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.rmodal-head .icon-btn { margin-inline-start: auto; }
+.rmodal img { width: 100%; height: auto; border-radius: 8px; display: block; }
+.rm-items { list-style: none; padding: 0; margin: 0; }
+.rm-items li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #e3e6e3; }
+.cmp summary { cursor: pointer; font-weight: 600; }
+.cmp-wrap { overflow-x: auto; margin-top: 10px; }
+.cmp-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.cmp-table th, .cmp-table td { padding: 6px 8px; border-bottom: 1px solid #eceeec; text-align: center; white-space: nowrap; }
+.cmp-table th:first-child, .cmp-table td:first-child { text-align: start; white-space: normal; min-width: 120px; }
+.cmp-table td.up { color: #b42318; font-weight: 600; }
+.cmp-table td.down { color: #157f3d; font-weight: 600; }
+.setup .steps-mini li { margin-bottom: 4px; }
+
+/* host options, reminders, collect nag */
+.host-opts { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line, #dfe3df); display: grid; gap: 8px; }
+.inline-field { display: flex; align-items: center; gap: 10px; }
+.inline-field span { flex: 1; }
+.inline-field input { width: 90px; flex: none; }
+.sender.remind { border-color: #f0b429; background: #fffaf0; }
+.remind-btn { margin-top: 8px; }
+.nags { gap: 10px; }
+.nag { border: 1px solid #f3c969; background: linear-gradient(180deg, #fff8e6, #fffdf6); border-radius: 14px; padding: 12px 14px; display: grid; gap: 6px; }
+.nag p { margin: 0; }
+.nag-title { font-weight: 700; }
+
+/* shared items, quick add person */
+.shared summary { cursor: pointer; font-weight: 600; }
+.shared .form { margin-top: 10px; display: grid; gap: 10px; }
+.shared-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.shared-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line, #e3e6e3); border-radius: 10px; }
+.shared-list li > span { display: grid; gap: 2px; }
+.sh-people { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-check { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line, #dfe3df); border-radius: 999px; font-size: 14px; cursor: pointer; }
+.chip-check input { margin: 0; }
+.chip-check:has(input:checked) { background: #e9f5ee; border-color: #8cc7a3; }
+.shared-mine { margin-top: 6px; }
+.link-btn { background: none; border: 0; color: var(--accent, #1b6b45); text-decoration: underline; font-size: 13px; padding: 0 4px; cursor: pointer; }
