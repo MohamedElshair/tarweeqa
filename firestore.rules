@@ -1,0 +1,68 @@
+rules_version = '2';
+// Tarweeqa v2 — database security rules
+// Copy this whole file into Firebase Console > Firestore Database > Rules, then click Publish.
+//
+// - Anyone with a group's invite link can join that group (and only add themselves).
+// - Only group members can see the group's restaurants and orders.
+// - Any member can add or edit restaurants and menus (shared library).
+// - Each person edits only their own order, and only while the cart is open.
+// - Each person votes only for themselves, and only while voting is open.
+// - Each person can only REPORT a payment; the host confirms it.
+// - The host of an order (or a group admin) controls everything else in that order.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function grp(gid) { return get(/databases/$(database)/documents/groups/$(gid)).data; }
+    function isMember(gid) { return signedIn() && request.auth.uid in grp(gid).memberUids; }
+    function isAdmin(gid) { return signedIn() && request.auth.uid in grp(gid).adminIds; }
+    function changedKeys() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function onlyMyEntry(field) {
+      return request.resource.data[field].diff(resource.data[field]).affectedKeys().hasOnly([request.auth.uid]);
+    }
+
+    match /groups/{gid} {
+      allow get: if signedIn();   // needed to show the group name on an invite link
+      allow list: if signedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.adminIds == [request.auth.uid]
+        && request.resource.data.memberUids == [request.auth.uid];
+      allow update: if signedIn() && (
+        // admins manage the group but can't take it from its owner
+        (request.auth.uid in resource.data.adminIds
+          && request.resource.data.ownerId == resource.data.ownerId
+          && resource.data.ownerId in request.resource.data.adminIds)
+        // anyone with the link: join, or edit their own name/phone
+        || (changedKeys().hasOnly(['roster', 'memberUids'])
+          && onlyMyEntry('roster')
+          && request.resource.data.memberUids.toSet().hasAll(resource.data.memberUids.toSet())
+          && request.resource.data.memberUids.toSet().difference(resource.data.memberUids.toSet()).difference([request.auth.uid].toSet()).size() == 0)
+      );
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /restaurants/{rid} {
+        allow read, create, update, delete: if isMember(gid);
+      }
+
+      match /carts/{cid} {
+        function isHost() { return resource.data.ownerId == request.auth.uid || isAdmin(gid); }
+        function stage() { return resource.data.stage; }
+
+        allow read: if isMember(gid);
+        allow create: if isMember(gid) && request.resource.data.ownerId == request.auth.uid;
+        allow delete: if isMember(gid) && isHost();
+        allow update: if isMember(gid) && (
+          (isHost() && request.resource.data.ownerId == resource.data.ownerId)
+          || (stage() == 'ordering' && request.time.toMillis() < resource.data.closesAt
+              && changedKeys().hasOnly(['members']) && onlyMyEntry('members'))
+          || (stage() == 'voting'
+              && changedKeys().hasOnly(['votes']) && onlyMyEntry('votes'))
+          || ((stage() == 'ordered' || stage() == 'settled')
+              && changedKeys().hasOnly(['payments']) && onlyMyEntry('payments')
+              && request.resource.data.payments[request.auth.uid].status == 'reported')
+        );
+      }
+    }
+  }
+}
