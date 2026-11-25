@@ -261,3 +261,16 @@ grant execute on function
   tq_create_cart(text, text, jsonb), tq_set_member(text, text, text, text, jsonb), tq_vote(text, text, text, text),
   tq_report_payment(text, text, text, jsonb), tq_patch_cart(text, text, text, jsonb)
 to anon, authenticated;
+
+-- ===== Shared catalog (added later) =====
+-- Every menu learned from receipts, in any group, is kept here, and every new group starts with all of it.
+-- The live database also replaces tq_create_group / tq_save_restaurant / tq_patch_restaurant so they seed and learn:
+--   tq_create_group  → after creating the group: perform tq_seed_group(gid)
+--   tq_save_restaurant, tq_patch_restaurant → after saving: perform tq_learn(<restaurant data>)
+create table if not exists tq_catalog (name_key text primary key, data jsonb not null, ms bigint not null);
+alter table tq_catalog enable row level security;
+revoke all on tq_catalog from anon, authenticated;
+create or replace function tq_name_key(p text) returns text language sql immutable as $$
+  select regexp_replace(translate(lower(coalesce(p, '')), 'أإآةى', 'اااهي'), '[^[:alnum:]؀-ۿ]+', '', 'g') $$;
+-- tq_learn(p_data jsonb): upsert {name, phone, talabatUrl, fees, items} by name_key (newest prices win)
+-- tq_seed_group(p_gid text): copy every catalog restaurant the group doesn't have yet
