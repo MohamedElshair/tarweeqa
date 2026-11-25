@@ -14,7 +14,10 @@
     route: { name: 'home' },
     draft: null, menuQuery: '', restQuery: '', actFor: null, sel: [],
     payMethod: {}, confirmKey: null, dirty: false, booted: false, fatal: null,
-    pending: null    // {gid, cid} from an invite / cart link
+    pending: null,   // {gid, cid} from an invite / cart link
+    history: {},     // restaurant name → price history rows
+    sendQ: null,     // { cartId, keys, i } — sending invoices one by one
+    invoiceView: null // standalone invoice page data
   };
 
   /* ---------- helpers ---------- */
@@ -159,6 +162,7 @@
 
   /* ---------- views ---------- */
   function view() {
+    if (S.invoiceView) return viewInvoice();
     if (S.fatal) return `<main class="page"><section class="panel"><h2>${esc(t('errFirebase'))}</h2><p class="muted mono">${esc(S.fatal)}</p></section></main>`;
     if (!S.booted) return `<div class="boot">${esc(t('appName'))}</div>`;
     if (!S.profile || !S.profile.name) return viewWelcome();
@@ -233,8 +237,8 @@
       <h1>${esc(t('welcomeTitle'))}</h1>
       <p class="lead">${esc(t('welcomeSub'))}</p>
       <form class="panel form" data-submit="welcome" novalidate>
-        <label class="field"><span>${esc(t('yourName'))}</span><input id="w-name" name="name" autocomplete="name"></label>
-        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="w-phone" name="phone" type="tel" inputmode="tel" dir="ltr" autocomplete="tel" placeholder="01012345678"><small>${esc(t('phoneHint'))}</small></label>
+        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="w-phone" name="phone" type="tel" inputmode="tel" dir="ltr" autocomplete="tel" placeholder="01012345678"><small>${esc(t('phoneHint2'))}</small></label>
+        <label class="field"><span>${esc(t('yourName'))}</span><input id="w-name" name="name" autocomplete="name"><small>${esc(t('nameHint'))}</small></label>
         <p class="form-error" id="w-err" hidden></p>
         <button class="primary block" type="submit">${esc(t('start'))}</button>
       </form>
@@ -449,6 +453,7 @@
       ${isOpenStage(st) ? shareBox(c, st) : ''}
       ${banner}`;
     if (st === 'voting') return head + votingView(c);
+    if (tab === 'bill' && c.restaurant && !S.history[c.restaurant.name]) { S.history[c.restaurant.name] = []; loadHistory(c.restaurant.name, true); }
     const tabs = [['mine', t('tabMine')], ['people', t('tabPeople') + ` <span class="tab-count tnum">${keys.length - waiting.length}/${keys.length}</span>`], ['order', t('tabOrder')], ['bill', t('tabBill')]];
     return `${head}
       <nav class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="tab${k === tab ? ' on' : ''}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</nav>
@@ -871,6 +876,8 @@
       ${host && (placed || st === 'closed') ? receiptPanel(c) : ''}
       ${host ? chargesEditor(c) : ''}
       ${host ? summary : ''}
+      ${host && placed ? combinedInvoice(c, bill) : ''}
+      ${!host && placed && c.invoices && c.invoices[me()] ? `<button class="secondary block" data-act="previewInvoice" data-key="${esc(me())}">${esc(t('viewMyInvoice'))}</button>` : ''}
       ${host && placed ? `<p class="muted small-text">${esc(t('sendAllHint'))}</p>` : ''}
       ${isLocal() && host ? `<p class="muted small-text">${esc(t('demoWaNote'))}</p>` : ''}
       <ul class="bills">${visible.map(r => billCard(c, r, host, st)).join('')}</ul>
@@ -1059,6 +1066,7 @@
 
       <section>
         <div class="section-head"><h2>${esc(t('menu'))} <small class="muted">${esc(t('itemsCount', { n: d.items.length }))}</small></h2>
+          ${d.items.length && S.history[d.name] ? movesSummary(d) : ''}
           ${d.items.length ? `<button class="ghost small" data-act="clearMenu">${esc(S.confirmKey === 'clearMenu' ? t('confirmAgain') : t('clearMenu'))}</button>` : ''}</div>
         ${d.items.length ? cats.map(g => `<div class="menu-group">
             ${g.name ? `<h3 class="cat">${esc(g.name)}</h3>` : ''}
@@ -1066,7 +1074,7 @@
               <input class="ei-name" id="ei-n-${esc(it.id)}" data-change="itemName" data-id="${esc(it.id)}" value="${esc(it.name)}" aria-label="${esc(t('itemName'))}">
               <input class="ei-price tnum" id="ei-p-${esc(it.id)}" data-change="itemPrice" data-id="${esc(it.id)}" inputmode="decimal" value="${esc(it.price)}" aria-label="${esc(t('price'))}">
               <button class="icon-btn" data-act="draftDelItem" data-id="${esc(it.id)}" aria-label="${esc(t('delete'))}">×</button>
-              ${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : ''}
+              ${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : moveTag(d.name, it.name, C.num(it.price), true)}
             </li>`).join('')}</ul></div>`).join('') : `<p class="empty">${esc(t('menuEmpty'))}</p>`}
         <form class="panel form add-item" data-submit="draftAddItem" novalidate>
           <div class="grid3">
@@ -1170,6 +1178,7 @@
     editRestaurant: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r) return;
       S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.ocr = null;
+      loadHistory(r.name, true);
       go('restaurant', { from: 'restaurants' });
     },
     draftDelItem: el => { syncDraft(); S.draft.items = S.draft.items.filter(i => i.id !== el.dataset.id); render(true); },
@@ -1314,6 +1323,24 @@
     rejectPayIn: el => { const c = cartById(el.dataset.cart); patch(c, { ['payments.' + el.dataset.key]: undefined }); },
     settle: () => patch(curCart(), { stage: 'settled' }),
     applyReceipt: () => applyReceipt(),
+    issueInvoices: async () => { const c = curCart(); const keys = await issueInvoices(c); startSending(c, keys); },
+    sendNext: el => {
+      const q = S.sendQ; if (!q) return;
+      const c = cartById(q.cartId);
+      if (c && el.dataset.key) patch(c, { ['invoices.' + el.dataset.key + '.sentAt']: Date.now() });
+      q.i++; if (q.i >= q.keys.length) { toast(t('allSent')); S.sendQ = null; }
+      render(true);
+    },
+    skipSend: () => { const q = S.sendQ; if (!q) return; q.i++; if (q.i >= q.keys.length) S.sendQ = null; render(true); },
+    stopSend: () => { S.sendQ = null; render(true); },
+    previewInvoice: el => {
+      const c = curCart(); const inv = (c.invoices || {})[el.dataset.key];
+      if (!inv) return;
+      S.invoiceView = { preview: true, back: { name: 'cart', id: c.id, tab: 'bill' }, data: invoiceData(c, el.dataset.key) };
+      render(true); window.scrollTo(0, 0);
+    },
+    closeInvoice: () => { const b = S.invoiceView && S.invoiceView.back; S.invoiceView = null; if (b) go(b.name, b); else render(true); },
+    copyInvoiceLink: el => copyText(el.dataset.text),
     copyItems: () => {
       syncDraft();
       const src = S.restaurants.find(r => r.id === (S.copyFrom || ($('#copy-from') || {}).value));
@@ -1480,6 +1507,8 @@
           for (const f of rc.fees) if (f.kind === 'delivery') S.draft.fees.delivery = f.amount;
           if (rc.servicePct) pcts.push(rc.servicePct);
         }
+        const dates = receipts.map(r => r.date ? Date.parse(r.date + 'T09:00:00') : 0).filter(Boolean);
+        S.draft.priceSource = { type: 'receipt', at: dates.length ? Math.max(...dates) : Date.now() };
         if (pcts.length) { S.draft.fees.servicePct = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length * 10) / 10; S.draft.fees.service = 0; }
         S.ocr.busy = false; S.ocr.error = false;
         S.ocr.msg = t('receiptToMenu2', { o: orders, u: updated, a: added }) + (dup ? ' ' + t('receiptDup', { n: dup }) : '') + (unsure ? ' ' + t('receiptUnsure', { n: unsure }) : '') + (other.length ? ' ' + t('receiptOtherSkipped', { s: Array.from(new Set(other)).join(comma()) }) : '');
@@ -1604,7 +1633,7 @@
     const kinds = new Set(rc.fees.filter((f, i) => R.fees[i]).map(f => f.kind));
     const kept = (c.charges || []).filter(ch => !kinds.has(ch.kind) || ch.kind === 'tip' || ch.kind === 'shortage');
     const fromReceipt = rc.fees.filter((f, i) => R.fees[i] && f.amount > 0).map(f => ({ id: rid(6), kind: f.kind, label: f.label || t('kind_' + f.kind), amount: f.amount, split: C.DEFAULT_SPLIT[f.kind] || 'equal' }));
-    await patch(c, { members, charges: [...fromReceipt, ...kept], receiptAt: Date.now() });
+    await patch(c, { members, charges: [...fromReceipt, ...kept], receiptAt: Date.now(), receiptNo: rc.orderNo || '', receiptDate: rc.date || '' });
     // teach the restaurant: real prices, new items, usual charges
     const r = S.restaurants.find(x => x.id === c.restaurantId);
     if (r) {
@@ -1617,10 +1646,201 @@
       const fees = Object.assign({}, r.fees || {});
       for (const f of rc.fees) if (f.kind === 'delivery') fees.delivery = f.amount;
       if (rc.servicePct) { fees.servicePct = rc.servicePct; fees.service = 0; }
-      await guard(S.store.patchRestaurant(S.gid, r.id, { items, fees, lastOrderedAt: Date.now() }));
+      await guard(S.store.patchRestaurant(S.gid, r.id, { items, fees, lastOrderedAt: Date.now(), priceSource: { type: 'receipt', cartId: c.id, at: rc.date ? Date.parse(rc.date + 'T09:00:00') : Date.now() } }));
+      loadHistory(r.name, true);
     }
     S.rcpt = null;
     toast(t('receiptDone'));
+  }
+
+  /* ---------- price history ---------- */
+  async function loadHistory(restName, force) {
+    if (!restName || !S.store.priceHistory) return [];
+    if (S.history[restName] && !force) return S.history[restName];
+    try { S.history[restName] = (await S.store.priceHistory(S.gid, restName)) || []; }
+    catch (e) { console.warn(e); S.history[restName] = S.history[restName] || []; }
+    scheduleRender();
+    return S.history[restName];
+  }
+  // the price before the current one, from the restaurant's history
+  function priceMove(restName, itemName, price) {
+    const rows = (S.history[restName] || []).filter(r => C.sameItem(r.item, itemName));
+    if (!rows.length) return null;
+    let idx = -1;
+    for (let i = rows.length - 1; i >= 0; i--) if (Math.abs(C.num(rows[i].price) - price) < 0.005) { idx = i; break; }
+    const before = idx > 0 ? rows[idx - 1] : (idx === -1 ? rows[rows.length - 1] : null);
+    if (!before || Math.abs(C.num(before.price) - price) < 0.005) return null;
+    return { prev: C.num(before.price), diff: C.round2(price - C.num(before.price)), at: before.at };
+  }
+  function moveBadge(prev, price) {
+    if (prev == null) return '';
+    const diff = C.round2(price - prev);
+    if (!diff) return '';
+    const up = diff > 0;
+    return `<span class="move ${up ? 'up' : 'down'} tnum" title="${esc(t('wasPrice', { p: C.fmtMoney(prev) }))}">${up ? '▲' : '▼'} ${esc(C.fmtMoney(Math.abs(diff)))}<small>${esc(t('wasPrice', { p: C.fmtMoney(prev) }))}</small></span>`;
+  }
+  function moveTag(restName, itemName, price) {
+    const mv = priceMove(restName, itemName, price);
+    return mv ? `<small class="hist">${moveBadge(mv.prev, price)}</small>` : '';
+  }
+  function movesSummary(d) {
+    let up = 0, down = 0;
+    for (const it of d.items) { const mv = priceMove(d.name, it.name, C.num(it.price)); if (mv) { if (mv.diff > 0) up++; else down++; } }
+    if (!up && !down) return `<small class="muted">${esc(t('pricesStable'))}</small>`;
+    return `<small class="moves">${up ? `<span class="move up">▲ ${esc(t('nUp', { n: up }))}</span>` : ''}${down ? `<span class="move down">▼ ${esc(t('nDown', { n: down }))}</span>` : ''}</small>`;
+  }
+
+  /* ---------- invoices ---------- */
+  const ymd = ms => { const d = new Date(ms); return String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0'); };
+  function invoiceLink(c, key) {
+    return baseUrl() + '?inv=1&g=' + encodeURIComponent(c.groupId || S.gid) + '&c=' + encodeURIComponent(c.id) + '&p=' + encodeURIComponent(key) + '&k=' + encodeURIComponent(c.invoiceKey || '');
+  }
+  async function issueInvoices(c) {
+    await loadHistory(c.restaurant.name, true);
+    const bill = C.computeBill(c, prevFor(c));
+    const secret = c.invoiceKey || rid(18);
+    const base = 'TQ-' + ymd(c.createdAt) + '-' + c.id.replace(/[^a-z0-9]/gi, '').slice(-4).toUpperCase();
+    const p = { invoiceKey: secret, invoicesAt: Date.now() };
+    bill.rows.forEach((r, i) => {
+      if (r.isHost) return;
+      p['invoices.' + r.key] = {
+        no: base + '-' + String(i + 1).padStart(2, '0'), issuedAt: Date.now(), name: r.name, phone: r.phone || '',
+        items: r.items.map(it => {
+          const unit = C.num(it.price), qty = C.num(it.qty);
+          const mv = priceMove(c.restaurant.name, it.name, unit);
+          return { name: it.name, qty, unit, total: C.round2(unit * qty), note: it.note || '', askedFor: it.askedFor || '', prev: mv ? mv.prev : null };
+        }),
+        subtotal: r.subtotal, lines: r.lines.map(l => ({ label: l.label, value: l.value, kind: l.kind })),
+        exact: r.exact, total: r.total, prev: r.prev, net: r.net,
+        receiptNo: c.receiptNo || '', receiptDate: c.receiptDate || '', people: bill.people, orderFood: bill.food, orderGrand: bill.grand,
+        splitNote: (c.charges || []).filter(ch => C.num(ch.amount)).map(ch => ch.label + ': ' + t('split_' + (ch.split || C.DEFAULT_SPLIT[ch.kind] || 'equal'))).join(' · ')
+      };
+    });
+    await patch(c, p);
+    // show the new invoices right away, without waiting for the next refresh
+    c.invoiceKey = secret; c.invoicesAt = p.invoicesAt; c.invoices = Object.assign({}, c.invoices || {});
+    for (const k of Object.keys(p)) if (k.startsWith('invoices.')) c.invoices[k.slice(9)] = p[k];
+    return Object.keys(p).filter(k => k.startsWith('invoices.')).map(k => k.slice(9));
+  }
+  function startSending(c, keys) {
+    keys = (keys || Object.keys(c.invoices || {})).filter(k => k !== c.ownerId);
+    S.sendQ = keys.length ? { cartId: c.id, keys, i: 0 } : null;
+    render(true);
+  }
+  function invoiceMessage(c, key) {
+    const inv = c.invoices[key];
+    return t('msgInvoice', { name: inv.name, rest: c.restaurant.name, total: money(inv.net), no: inv.no, link: invoiceLink(c, key) }) + payLines(c.payInfo || {});
+  }
+  function combinedInvoice(c, bill) {
+    const inv = c.invoices || {};
+    const issued = Object.keys(inv).length;
+    const stale = issued && bill.rows.some(r => !r.isHost && (!inv[r.key] || Math.abs(inv[r.key].net - r.net) > 0.009));
+    const q = S.sendQ && S.sendQ.cartId === c.id ? S.sendQ : null;
+    const rest = c.restaurant.name;
+    const rows = bill.rows.map(r => `<tr class="${r.isHost ? 'is-host' : ''}">
+        <td class="who"><b>${esc(r.name)}</b>${r.isHost ? `<small>${esc(t('host'))}</small>` : ''}</td>
+        <td class="what">${r.items.map(it => `<span class="ci">${esc(it.qty)}× ${esc(it.name)} <em class="tnum">${esc(C.fmtMoney(it.price))}</em>${(() => { const mv = priceMove(rest, it.name, C.num(it.price)); return mv ? moveBadge(mv.prev, C.num(it.price)) : ''; })()}</span>`).join('')}</td>
+        <td class="num tnum">${esc(C.fmtMoney(r.subtotal))}</td>
+        <td class="num tnum">${esc(C.fmtMoney(C.round2(r.exact - r.subtotal)))}</td>
+        <td class="num tnum"><b>${esc(C.fmtMoney(r.isHost ? r.total : r.net))}</b></td>
+        <td>${payChip(r, c)}${inv[r.key] ? `<button class="link-btn" data-act="previewInvoice" data-key="${esc(r.key)}">${esc(t('viewInvoice'))}</button>` : ''}</td>
+      </tr>`).join('');
+    let sender = '';
+    if (q) {
+      const key = q.keys[q.i], one = (c.invoices || {})[key];
+      if (one) {
+        const phone = one.phone || ((c.members || {})[key] || {}).phone;
+        sender = `<div class="sender">
+          <div class="sender-top"><span class="tnum">${esc(t('sendingN', { i: q.i + 1, n: q.keys.length }))}</span><button class="ghost small" data-act="stopSend">${esc(t('stop'))}</button></div>
+          <p><b>${esc(one.name)}</b> · <span class="tnum">${esc(money(one.net))}</span> · <span class="muted">${esc(one.no)}</span></p>
+          <div class="btn-row">
+            ${phone ? `<a class="wa big" data-act="sendNext" data-keep="1" data-key="${esc(key)}" href="${esc(waLink(phone, invoiceMessage(c, key)))}" target="_blank" rel="noopener">${waIcon()} ${esc(t('sendTo', { name: one.name }))}</a>`
+              : `<button class="secondary" data-act="copyInvoiceLink" data-text="${esc(invoiceMessage(c, key))}">${esc(t('copyInvoiceMsg'))}</button><button class="primary" data-act="sendNext" data-key="${esc(key)}">${esc(t('next'))}</button>`}
+            <button class="ghost small" data-act="skipSend">${esc(t('skip'))}</button>
+          </div>
+        </div>`;
+      }
+    }
+    return `<section class="panel combined">
+      <div class="section-head"><p class="label">${esc(t('combinedTitle'))}</p><small class="muted tnum">${esc(t('combinedSub', { n: bill.people, a: money(bill.grand) }))}</small></div>
+      <div class="scroll"><table class="ctable">
+        <thead><tr><th>${esc(t('colName'))}</th><th>${esc(t('colItems'))}</th><th>${esc(t('rowFood'))}</th><th>${esc(t('colCharges'))}</th><th>${esc(t('rowTotal'))}</th><th>${esc(t('colStatus'))}</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="2">${esc(t('colTotal'))}</td><td class="num tnum">${esc(C.fmtMoney(bill.food))}</td><td class="num tnum">${esc(C.fmtMoney(bill.chargesTotal))}</td><td class="num tnum"><b>${esc(C.fmtMoney(bill.collected))}</b></td><td></td></tr></tfoot>
+      </table></div>
+      ${sender || `<button class="primary block big" data-act="issueInvoices">${esc(issued ? (stale ? t('reissueSend') : t('sendAgain')) : t('issueSend'))}</button>
+        ${issued ? `<p class="muted small-text">${esc(t('issuedAt', { n: issued, t: fmtTime(c.invoicesAt || Date.now()) }))}${stale ? ' ' + esc(t('staleNote')) : ''}</p>` : `<p class="muted small-text">${esc(t('issueHint'))}</p>`}`}
+    </section>`;
+  }
+  function invoiceData(c, key) {
+    return { invoice: c.invoices[key], payment: (c.payments || {})[key], restaurant: c.restaurant, title: c.title, createdAt: c.createdAt,
+      ownerName: c.ownerName, ownerPhone: c.ownerPhone, payInfo: c.payInfo, groupName: S.group && S.group.name, link: invoiceLink(c, key) };
+  }
+  async function openInvoice(inv) {
+    S.invoiceView = { loading: true };
+    render(true);
+    try {
+      const data = await S.store.invoice(inv.gid, inv.cid, inv.key, inv.secret);
+      S.invoiceView = { data: Object.assign(data, { link: location.href }) };
+    } catch (e) { console.warn(e); S.invoiceView = { error: true }; }
+    render(true);
+  }
+  function viewInvoice() {
+    const V = S.invoiceView;
+    if (V.loading) return `<main class="inv-page"><div class="loading" aria-busy="true"></div></main>`;
+    if (V.error || !V.data || !V.data.invoice) return `<main class="inv-page"><p class="empty">${esc(t('invoiceMissing'))}</p></main>`;
+    const D = V.data, I = D.invoice, P = D.payment;
+    const paid = P && P.status === 'confirmed' ? C.num(P.amount) : 0;
+    const state = P && P.status === 'reported' ? 'pending' : (paid + 0.009 >= I.net ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'));
+    const stamp = { paid: t('invPaid'), pending: t('invPending'), partial: t('invPartial', { a: C.fmtMoney(paid) }), unpaid: t('invUnpaid') }[state];
+    const pi = D.payInfo || {};
+    const when = new Date(I.issuedAt || D.createdAt);
+    const changed = I.items.filter(i => i.prev != null && i.prev !== i.unit);
+    return `<main class="inv-page">
+      ${V.preview ? `<div class="inv-tools"><button class="ghost small" data-act="closeInvoice">‹ ${esc(t('back'))}</button>
+        ${D.link ? `<button class="secondary small" data-act="copyInvoiceLink" data-text="${esc(D.link)}">${esc(t('copyInvoiceLink'))}</button>` : ''}</div>` : ''}
+      <article class="invoice">
+        <header class="inv-head">
+          <div class="inv-brand">${logoSvg()}<div><b>${esc(t('appName'))}</b><small>${esc(D.groupName || '')}</small></div></div>
+          <div class="inv-title"><h1>${esc(t('invoice'))}</h1><span class="tnum" dir="ltr">${esc(I.no)}</span></div>
+        </header>
+        <dl class="inv-meta tnum">
+          <div><dt>${esc(t('invDate'))}</dt><dd>${esc(when.toLocaleDateString(loc(), { day: 'numeric', month: 'long', year: 'numeric' }))} · ${esc(fmtTime(when.getTime()))}</dd></div>
+          <div><dt>${esc(t('invTo'))}</dt><dd><b>${esc(I.name)}</b>${I.phone ? ` <span dir="ltr">${esc(I.phone)}</span>` : ''}</dd></div>
+          <div><dt>${esc(t('invFrom'))}</dt><dd>${esc(D.ownerName || '')}</dd></div>
+          <div><dt>${esc(t('invRest'))}</dt><dd>${esc((D.restaurant || {}).name || '')}${D.title ? ' · ' + esc(D.title) : ''}</dd></div>
+          ${I.receiptNo ? `<div><dt>${esc(t('invTalabatNo'))}</dt><dd dir="ltr">${esc(I.receiptNo)}</dd></div>` : ''}
+        </dl>
+        <table class="inv-items">
+          <thead><tr><th>${esc(t('itemName'))}</th><th class="num">${esc(t('qty'))}</th><th class="num">${esc(t('unitPrice'))}</th><th class="num">${esc(t('lineTotal'))}</th></tr></thead>
+          <tbody>${I.items.map(it => `<tr>
+            <td><b>${esc(it.name)}</b>${it.note ? `<small>${esc(it.note)}</small>` : ''}${it.askedFor && it.askedFor !== it.name ? `<small>${esc(t('youAsked', { s: it.askedFor }))}</small>` : ''}</td>
+            <td class="num tnum">${esc(it.qty)}</td>
+            <td class="num tnum">${esc(C.fmtMoney(it.unit))}${moveBadge(it.prev, it.unit)}</td>
+            <td class="num tnum">${esc(C.fmtMoney(it.total))}</td></tr>`).join('')}</tbody>
+        </table>
+        <dl class="inv-totals tnum">
+          <div><dt>${esc(t('rowFood'))}</dt><dd>${esc(C.fmtMoney(I.subtotal))}</dd></div>
+          ${(I.lines || []).map(l => `<div><dt>${esc(l.label)}</dt><dd>${l.value < 0 ? '−' : ''}${esc(C.fmtMoney(Math.abs(l.value)))}</dd></div>`).join('')}
+          ${Math.abs(I.total - I.exact) > 0.009 ? `<div><dt>${esc(t('invRounding'))}</dt><dd>+${esc(C.fmtMoney(C.round2(I.total - I.exact)))}</dd></div>` : ''}
+          ${Math.abs(I.prev) > 0.009 ? `<div class="sub"><dt>${esc(t('rowTotal'))}</dt><dd>${esc(C.fmtMoney(I.total))}</dd></div><div class="${I.prev > 0 ? 'ok' : 'warn'}"><dt>${esc(I.prev > 0 ? t('prevCredit') : t('prevDebt'))}</dt><dd>${I.prev > 0 ? '−' : '+'}${esc(C.fmtMoney(Math.abs(I.prev)))}</dd></div>` : ''}
+          <div class="grand"><dt>${esc(t('invDue'))}</dt><dd>${esc(money(I.net))}</dd></div>
+        </dl>
+        <div class="inv-stamp ${state}">${esc(stamp)}${P && P.method ? ` · ${esc(t('method_' + P.method))}` : ''}</div>
+        ${(pi.instapay || pi.wallet) && state !== 'paid' ? `<section class="inv-pay">
+          <p class="label">${esc(t('payTo', { name: D.ownerName || '' }))}</p>
+          ${pi.instapay ? `<p class="pay-line"><span>InstaPay</span><code dir="ltr">${esc(pi.instapay)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.instapay)}">${esc(t('copy'))}</button></p>` : ''}
+          ${pi.wallet ? `<p class="pay-line"><span>${esc(t('walletShort'))}</span><code dir="ltr">${esc(pi.wallet)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.wallet)}">${esc(t('copy'))}</button></p>` : ''}
+          ${D.ownerPhone ? wa(waLink(D.ownerPhone, t('msgPaidInvoice', { no: I.no, total: money(I.net) })), t('tellPaid'), 'block') : ''}
+        </section>` : ''}
+        <footer class="inv-foot">
+          ${changed.length ? `<p>${esc(t('invPriceNote', { n: changed.length }))}</p>` : ''}
+          ${I.splitNote ? `<p>${esc(t('invSplit'))}: ${esc(I.splitNote)}</p>` : ''}
+          <p>${esc(t('invOrderNote', { n: I.people || 1, a: money(I.orderGrand || 0) }))}</p>
+          <p class="inv-by">${esc(t('invBy'))}</p>
+        </footer>
+      </article>
+    </main>`;
   }
 
   function syncDraft() {
@@ -1674,14 +1894,26 @@
   };
 
   const submits = {
-    welcome: form => {
+    welcome: async form => {
       const name = form.name.value.trim(), phone = form.phone.value.trim();
       const err = $('#w-err');
-      if (!name) { err.textContent = t('errName'); err.hidden = false; return; }
       if (!C.isValidPhone(phone)) { err.textContent = t('errPhone'); err.hidden = false; return; }
-      S.profile = { name, phone, instapay: '', wallet: '' };
+      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      let r = null;
+      try { r = await S.store.register(phone, name, {}); }
+      catch (e) { console.warn(e); if (btn) btn.disabled = false; err.textContent = t('errWrite'); err.hidden = false; return; }
+      const p = (r && r.person) || {};
+      if (!name && !p.name) { if (btn) btn.disabled = false; err.textContent = t('errName'); err.hidden = false; return; }
+      S.profile = Object.assign({ instapay: '', wallet: '' }, p.data || {}, { name: p.name || name, phone });
       LS.set('tarweeqa.profile', S.profile);
-      if (S.pending && S.pending.gid) loadPending(); else render(true);
+      if (r && r.existing) toast(t('welcomeBack', { name: S.profile.name }));
+      if (S.pending && S.pending.gid) return loadPending();
+      const saved = LS.get('tarweeqa.gid');
+      const mine = (S.store.myGroups || []);
+      if (mine.length) S.groups = mine;
+      const pick = (saved && mine.some(g => g.id === saved)) ? saved : (mine[0] && mine[0].id) || saved;
+      if (pick) { setGroup(pick, true); return go('home'); }
+      render(true);
     },
     profile: form => {
       const p = { name: form.name.value.trim(), phone: form.phone.value.trim(), instapay: form.instapay.value.trim(), wallet: form.wallet.value.trim() };
@@ -1690,6 +1922,7 @@
       if (!C.isValidPhone(p.phone)) { err.textContent = t('errPhone'); err.hidden = false; return; }
       S.profile = Object.assign({}, S.profile, p);
       if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
+      if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(p.name, { instapay: p.instapay, wallet: p.wallet }));
       if (S.group && S.group.roster && S.group.roster[me()]) guard(S.store.joinGroup(S.gid, Object.assign({}, S.group.roster[me()], { name: p.name, phone: p.phone })));
       toast(t('saved')); go('home');
     },
@@ -1759,7 +1992,9 @@
     const el = e.target.closest('[data-act]');
     if (!el || !$('#app').contains(el) || el.disabled) return;
     const fn = actions[el.dataset.act];
-    if (fn) { e.preventDefault(); fn(el); }
+    if (!fn) return;
+    if (el.tagName === 'A' && el.dataset.keep) { setTimeout(() => fn(el), 0); return; }   // open the link and also act
+    e.preventDefault(); fn(el);
   });
   document.addEventListener('change', e => {
     const el = e.target.closest('[data-change]');
@@ -1838,6 +2073,8 @@
         S.store = new SupaStore(CFG);
         await S.store.init();
         S.profile = LS.get('tarweeqa.profile');
+        const sp = S.store.person;
+        if (sp && sp.name) { S.profile = Object.assign({ instapay: '', wallet: '' }, S.profile || {}, sp.data || {}, { name: sp.name, phone: (S.profile && S.profile.phone) || ('0' + String(sp.phone || '').replace(/^20/, '')) }); LS.set('tarweeqa.profile', S.profile); }
       } else if (CFG.firebase) {
         S.store = new CloudStore(CFG);
         await S.store.init();
@@ -1857,8 +2094,9 @@
 
     if (isLocal()) { setGroup('demo-g1', true); return go('cart', { id: 'demo-c1', tab: 'mine' }); }
 
-    let gid = null, cid = null;
-    try { const q = new URLSearchParams(location.search); gid = q.get('g'); cid = q.get('c'); } catch (e) { }
+    let gid = null, cid = null, inv = null;
+    try { const q = new URLSearchParams(location.search); gid = q.get('g'); cid = q.get('c'); if (q.get('inv')) inv = { gid, cid, key: q.get('p'), secret: q.get('k') }; } catch (e) { }
+    if (inv) return openInvoice(inv);
     if (gid) { S.pending = { gid, cid }; if (S.profile && S.profile.name) loadPending(); else render(true); return; }
     const saved = LS.get('tarweeqa.gid');
     if (saved && S.profile && S.profile.name) { setGroup(saved, true); return go('home'); }

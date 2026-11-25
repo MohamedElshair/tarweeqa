@@ -41,7 +41,7 @@
   class LocalStore {
     constructor() {
       this.mode = 'local';
-      this.key = 'tarweeqa.demo.v3';
+      this.key = 'tarweeqa.demo.v4';
       this.data = LS.get(this.key);
       this.subs = new Set();
       try {
@@ -85,6 +85,15 @@
     async setVote(gid, cartId, restId) { setPath(this.data.carts[cartId], 'votes.' + this.uid(), restId); this.persist(); }
     async reportPayment(gid, cartId, p) { setPath(this.data.carts[cartId], 'payments.' + this.uid(), p); this.persist(); }
     async patchCart(gid, cartId, patch) { const c = this.data.carts[cartId]; for (const k of Object.keys(patch)) setPath(c, k, patch[k]); this.persist(); }
+    async register(phone, name, data) { this.saveProfile(Object.assign({ name, phone }, data || {})); return { uid: this.uid(), existing: false, person: { name, phone, data } }; }
+    async saveProfileRemote() { }
+    async priceHistory(gid, restName) { return clone((this.data.prices || {})[restName] || []); }
+    async invoice(gid, cid, key, secret) {
+      const c = this.data.carts[cid];
+      if (!c || c.invoiceKey !== secret || !(c.invoices || {})[key]) throw new Error('invoice not found');
+      return clone({ invoice: c.invoices[key], payment: (c.payments || {})[key], restaurant: c.restaurant, title: c.title, createdAt: c.createdAt,
+        ownerName: c.ownerName, ownerPhone: c.ownerPhone, payInfo: c.payInfo, groupName: this.data.groups[gid] && this.data.groups[gid].name });
+    }
   }
 
   /* ---------------- Firebase store ---------------- */
@@ -164,20 +173,30 @@
         document.addEventListener('visibilitychange', () => { if (!document.hidden) for (const gid of this.g.keys()) this.poll(gid); });
       } catch (e) { }
     }
-    async rpc(fn, args) {
+    async rpc(fn, args, noToken) {
       const res = await fetch(this.url + '/rest/v1/rpc/' + fn, {
         method: 'POST',
         headers: { apikey: this.key, Authorization: 'Bearer ' + this.key, 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ p_token: this.token }, args || {}))
+        body: JSON.stringify(noToken ? (args || {}) : Object.assign({ p_token: this.token }, args || {}))
       });
       const text = await res.text();
       let data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
       if (!res.ok) throw new Error((data && data.message) || ('HTTP ' + res.status));
       return data;
     }
-    async init() { const r = await this.rpc('tq_hello'); this._uid = r.uid; }
+    async init() { const r = await this.rpc('tq_hello'); this._uid = r.uid; this.person = r.person || null; }
     hasData() { return true; }
     uid() { return this._uid; }
+    /* the phone number is the person: a number seen before brings back that person on this device */
+    async register(phone, name, data) {
+      const r = await this.rpc('tq_register', { p_phone: phone, p_name: name, p_data: data || {} });
+      if (r.uid !== this._uid) { this._uid = r.uid; this.g.forEach(c => { c.since = 0; c.member = false; }); }
+      this.person = r.person; await this.refreshGroups();
+      return r;
+    }
+    saveProfileRemote(name, data) { return this.rpc('tq_save_profile', { p_name: name, p_data: data || {} }); }
+    priceHistory(gid, restName) { return this.rpc('tq_price_history', { p_gid: gid, p_rest_name: restName }); }
+    invoice(gid, cid, key, secret) { return this.rpc('tq_invoice', { p_gid: gid, p_cid: cid, p_key: key, p_secret: secret }, true); }
     static nulls(patch) { const o = {}; for (const k of Object.keys(patch)) o[k] = patch[k] === undefined ? null : patch[k]; return o; }
 
     /* my groups */
@@ -370,7 +389,15 @@
       }
     }, snap(r1), host('me'));
 
+    // price history read from the group's receipts (the falafel went from 17 to 18)
+    const day0 = 1795419240000;
+    const hist = r => r.items.map(i => ({ item: i.name, price: i.price, at: r.id === 'demo-r2' ? 1795506600000 : day0, source: 'receipt' }));
+    const prices = { [r1.name]: [{ item: 'سندوتش فلافل سلطه و طحينه', price: 17, at: null, source: 'receipt' }].concat(hist(r1)), [r2.name]: hist(r2), [r3.name]: hist(r3) };
+    prices[r1.name].push({ item: 'سندوتش فول اسكندراني', price: 28, at: now - 3600000, source: 'menu' });
+    r1.items[0].price = 28; today.menu = r1.items;
+
     return {
+      prices,
       actingUid: 'me', people,
       groups: { [gid]: group },
       restaurants: { [r1.id]: r1, [r2.id]: r2, [r3.id]: r3 },
