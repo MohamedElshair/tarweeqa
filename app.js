@@ -163,8 +163,17 @@
   }
 
   /* ---------- views ---------- */
+  function adoptPayLink() {
+    if (!S.profile || S.profile.instapayLink || !S.carts || !S.carts.length) return;
+    const c = S.carts.filter(x => x.ownerId === me() && x.payInfo && x.payInfo.instapayLink).sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!c) return;
+    S.profile = Object.assign({}, S.profile, { instapay: S.profile.instapay || c.payInfo.instapay || '', instapayLink: c.payInfo.instapayLink });
+    if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
+    if (S.store.saveProfileRemote) S.store.saveProfileRemote(S.profile.name, { instapay: S.profile.instapay, instapayLink: S.profile.instapayLink, wallet: S.profile.wallet || '' }).catch(() => { });
+  }
   function view() {
     if (S.invoiceView) return viewInvoice();
+    adoptPayLink();
     if (S.fatal) return `<main class="page"><section class="panel"><h2>${esc(t('errFirebase'))}</h2><p class="muted mono">${esc(S.fatal)}</p></section></main>`;
     if (!S.booted) return `<div class="boot">${esc(t('appName'))}</div>`;
     if (!S.profile || !S.profile.name) return viewWelcome();
@@ -413,7 +422,7 @@
         <section class="panel">
           <p class="label">${esc(t('payInfo'))}</p>
           <div class="grid2">
-            <label class="field"><span>${esc(t('instapay'))}</span><input id="nc-insta" name="instapay" dir="ltr" value="${esc(S.profile.instapay || '')}"></label>
+            <label class="field"><span>${esc(t('instapayAny'))}</span><input id="nc-insta" name="instapay" dir="ltr" value="${esc(instaValue(S.profile))}" placeholder="name@instapay / https://ipn.eg/…"></label>
             <label class="field"><span>${esc(t('wallet'))}</span><input id="nc-wallet" name="wallet" type="tel" dir="ltr" value="${esc(S.profile.wallet || '')}"></label>
           </div>
         </section>
@@ -811,8 +820,9 @@
     if (row.prev < -0.009) L.push(`${t('prevDebt')}: +${C.fmtMoney(-row.prev)}`);
     if (Math.abs(row.prev) > 0.009) L.push(t('msgNet', { total: money(row.net) }));
     const pi = c.payInfo || {};
-    if (pi.instapay || pi.wallet) {
+    if (pi.instapay || pi.wallet || pi.instapayLink) {
       L.push('', t('msgPay'));
+      if (pi.instapayLink) L.push(t('msgPayLink', { link: pi.instapayLink }));
       if (pi.instapay) L.push('InstaPay: ' + pi.instapay);
       if (pi.wallet) L.push(t('walletShort') + ': ' + pi.wallet);
     }
@@ -917,13 +927,13 @@
           <span class="bar"><i style="width:${bill.collected ? Math.min(100, Math.round(bill.paidSum / bill.collected * 100)) : 0}%"></i></span></div>` : ''}
       </section>`;
     const visible = host ? bill.rows : bill.rows.filter(r => r.key === me());
-    const payBox = (pi.instapay || pi.wallet || host) ? `<section class="panel pay">
+    const myRow = bill.rows.find(r => r.key === me());
+    const payBox = (pi.instapay || pi.wallet || pi.instapayLink || host) ? `<section class="panel pay">
         <p class="label">${esc(host ? t('payInfoEdit') : t('payTo', { name: c.ownerName }))}</p>
         ${host ? `<div class="grid2">
-          <label class="field"><span>${esc(t('instapay'))}</span><input id="pi-insta" dir="ltr" data-change="payInfo" data-k="instapay" value="${esc(pi.instapay || '')}"></label>
+          <label class="field"><span>${esc(t('instapayAny'))}</span><input id="pi-insta" dir="ltr" data-change="payInfoInsta" value="${esc(instaValue(pi))}" placeholder="name@instapay / https://ipn.eg/…"></label>
           <label class="field"><span>${esc(t('wallet'))}</span><input id="pi-wallet" dir="ltr" type="tel" data-change="payInfo" data-k="wallet" value="${esc(pi.wallet || '')}"></label>
-        </div>` : `${pi.instapay ? `<p class="pay-line"><span>InstaPay</span><code dir="ltr">${esc(pi.instapay)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.instapay)}">${esc(t('copy'))}</button></p>` : ''}
-          ${pi.wallet ? `<p class="pay-line"><span>${esc(t('walletShort'))}</span><code dir="ltr">${esc(pi.wallet)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.wallet)}">${esc(t('copy'))}</button></p>` : ''}`}
+        </div>${pi.instapayLink ? `<p class="muted small-text">✓ ${esc(t('instaLinkOk', { h: pi.instapay || '' }))}</p>` : ''}` : payButtons(pi, myRow && placed ? (myRow.remaining || myRow.net || 0) : 0)}
       </section>` : '';
     return `<section class="stack">
       ${!placed ? `<p class="banner soft">${esc(host ? t('billBeforeHost') : t('billBefore'))}</p>` : ''}
@@ -986,8 +996,7 @@
           return `<div class="panel owe">
             <div class="bc-head"><strong>${esc(p.hostName)}</strong><b class="tnum bc-total">${esc(money(-p.balance))}</b></div>
             <small class="muted">${esc(p.carts.filter(x => x.state !== 'paid').map(x => x.rest + ' (' + fmtAgo(x.at) + ')').join(comma()))}</small>
-            ${pi.instapay ? `<p class="pay-line"><span>InstaPay</span><code dir="ltr">${esc(pi.instapay)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.instapay)}">${esc(t('copy'))}</button></p>` : ''}
-            ${pi.wallet ? `<p class="pay-line"><span>${esc(t('walletShort'))}</span><code dir="ltr">${esc(pi.wallet)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.wallet)}">${esc(t('copy'))}</button></p>` : ''}
+            ${reported ? '' : payButtons(pi, -p.balance)}
             ${reported ? `<p class="muted small-text">${esc(t('waitingConfirm', { host: p.hostName, m: '' }))}</p>` : `<div class="pay-row">
               <div class="seg small">${METHODS.map(mt => `<button class="${method === mt ? 'on' : ''}" data-act="payMethod" data-key="o_${esc(p.host)}" data-m="${mt}">${esc(t('method_' + mt))}</button>`).join('')}</div>
               <button class="primary small" data-act="reportDebt" data-host="${esc(p.host)}">${esc(t('iPaidAll', { a: C.fmtMoney(-p.balance) }))}</button>
@@ -997,8 +1006,28 @@
         ${credit.length ? `<p class="muted small-text">${esc(t('yourCredit'))}: ${esc(credit.map(p => p.hostName + ' ' + C.fmtMoney(p.balance)).join(comma()))}</p>` : ''}
       </section>`;
   }
+  /* InstaPay: accept the handle, the ipn.eg link, or the whole "send money to me" message pasted as is */
+  function splitInsta(text) {
+    const v = String(text || '').trim();
+    const link = (v.match(/https?:\/\/(?:www\.)?ipn\.eg\/\S+/i) || [])[0] || '';
+    let handle = (v.match(/[\w.\-]+@instapay/i) || [])[0] || '';
+    if (!handle && link) { const m = link.match(/\/S\/([^/]+)\/instapay/i); if (m) handle = m[1] + '@instapay'; }
+    if (!handle && !link) handle = v;
+    return { instapay: handle, instapayLink: link };
+  }
+  const instaValue = pi => (pi && (pi.instapayLink || pi.instapay)) || '';
+  // pay box: one tap to InstaPay with the amount shown, plus the handle and wallet to copy
+  function payButtons(pi, amount) {
+    pi = pi || {};
+    const amt = C.fmtMoney(amount || 0);
+    return `${pi.instapayLink ? `<a class="insta-btn" href="${esc(pi.instapayLink)}" target="_blank" rel="noopener">💸 ${esc(t('payInsta', { a: money(amount || 0) }))}</a>
+        <p class="muted small-text insta-note">${esc(t('payInstaNote', { a: amt }))} <button class="link-btn" data-act="copy" data-text="${esc(amt)}">${esc(t('copyAmount'))}</button></p>` : ''}
+      ${pi.instapay ? `<p class="pay-line"><span>InstaPay</span><code dir="ltr">${esc(pi.instapay)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.instapay)}">${esc(t('copy'))}</button></p>` : ''}
+      ${pi.wallet ? `<p class="pay-line"><span>${esc(t('walletShort'))}</span><code dir="ltr">${esc(pi.wallet)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.wallet)}">${esc(t('copy'))}</button></p>` : ''}`;
+  }
   function payLines(pi) {
     const L = [];
+    if (pi.instapayLink) L.push(t('msgPayLink', { link: pi.instapayLink }));
     if (pi.instapay) L.push('InstaPay: ' + pi.instapay);
     if (pi.wallet) L.push(t('walletShort') + ': ' + pi.wallet);
     return L.length ? '\n\n' + t('msgPay') + '\n' + L.join('\n') : '';
@@ -1159,7 +1188,7 @@
         <label class="field"><span>${esc(t('yourName'))}</span><input id="p-name" name="name" value="${esc(p.name)}"></label>
         <label class="field"><span>${esc(t('yourPhone'))}</span><input id="p-phone" name="phone" type="tel" dir="ltr" value="${esc(p.phone)}"></label>
         <div class="grid2">
-          <label class="field"><span>${esc(t('instapay'))}</span><input id="p-insta" name="instapay" dir="ltr" value="${esc(p.instapay || '')}"></label>
+          <label class="field"><span>${esc(t('instapayAny'))}</span><input id="p-insta" name="instapay" dir="ltr" value="${esc(instaValue(p))}" placeholder="name@instapay / https://ipn.eg/…"></label>
           <label class="field"><span>${esc(t('wallet'))}</span><input id="p-wallet" name="wallet" type="tel" dir="ltr" value="${esc(p.wallet || '')}"></label>
         </div>
         <p class="form-error" id="p-err" hidden></p>
@@ -1389,7 +1418,14 @@
     rejectPayIn: el => { const c = cartById(el.dataset.cart); patch(c, { ['payments.' + el.dataset.key]: undefined }); },
     settle: () => patch(curCart(), { stage: 'settled' }),
     applyReceipt: () => applyReceipt(),
-    issueInvoices: async () => { const c = curCart(); const keys = await issueInvoices(c); startSending(c, keys); },
+    issueInvoices: async () => {
+      const c = curCart();
+      if (!C.computeBill(c, {}).rows.some(r => r.key !== c.ownerId)) return toast(t('noOneElse'), 'warn');
+      const keys = await issueInvoices(c);
+      if (!keys || !keys.length) return toast(t('noOneElse'), 'warn');
+      startSending(c, keys);
+      setTimeout(() => { const el = document.querySelector('.sender'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+    },
     remindUnpaid: el => {
       const c = el.dataset.cart ? cartById(el.dataset.cart) : curCart(); if (!c) return;
       const keys = unpaidRows(c).map(r => r.key);
@@ -1819,7 +1855,7 @@
   function saveHostDefaults(o) {
     Object.assign(S.profile, o);
     if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
-    if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(S.profile.name, { instapay: S.profile.instapay, wallet: S.profile.wallet, hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee), hostAuto: !!S.profile.hostAuto }));
+    if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(S.profile.name, { instapay: S.profile.instapay, instapayLink: S.profile.instapayLink || '', wallet: S.profile.wallet, hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee), hostAuto: !!S.profile.hostAuto }));
   }
   function hostOptions(c) {
     const bill = C.computeBill(c, {});
@@ -2075,7 +2111,7 @@
         <tbody>${rows}</tbody>
         <tfoot><tr><td colspan="2">${esc(t('colTotal'))}</td><td class="num tnum">${esc(C.fmtMoney(bill.food))}</td><td class="num tnum">${esc(C.fmtMoney(bill.chargesTotal))}</td><td class="num tnum"><b>${esc(C.fmtMoney(bill.collected))}</b></td><td></td></tr></tfoot>
       </table></div>
-      ${sender || `<button class="primary block big" data-act="issueInvoices">${esc(issued ? (stale ? t('reissueSend') : t('sendAgain')) : t('issueSend'))}</button>
+      ${!bill.rows.some(r => !r.isHost) ? `<p class="banner soft">${esc(t('noOneElse'))}</p>` : sender || `<p class="muted small-text send-to">${esc(t('willSendTo', { s: bill.rows.filter(r => !r.isHost).map(r => r.name + (r.phone ? '' : ' ' + t('noPhoneTag'))).join(comma()) }))}</p><button class="primary block big" data-act="issueInvoices">${esc(issued ? (stale ? t('reissueSend') : t('sendAgain')) : t('issueSend'))}</button>
         ${issued ? `<p class="muted small-text">${esc(t('issuedAt', { n: issued, t: fmtTime(c.invoicesAt || Date.now()) }))}${stale ? ' ' + esc(t('staleNote')) : ''}</p>` : `<p class="muted small-text">${esc(t('issueHint'))}</p>`}
         ${(() => { const un = bill.rows.filter(r => !r.isHost && (r.state === 'unpaid' || r.state === 'partial')); return un.length ? `<button class="secondary block remind-btn" data-act="remindUnpaid">🔔 ${esc(t('remindUnpaid', { n: un.length }))}</button>
           <p class="muted small-text">${esc(t('remindUnpaidHint', { s: un.map(r => r.name).join(comma()) }))}</p>` : ''; })()}`}
@@ -2136,10 +2172,9 @@
           <div class="grand"><dt>${esc(t('invDue'))}</dt><dd>${esc(money(I.net))}</dd></div>
         </dl>
         <div class="inv-stamp ${state}">${esc(stamp)}${P && P.method ? ` · ${esc(t('method_' + P.method))}` : ''}</div>
-        ${(pi.instapay || pi.wallet) && state !== 'paid' ? `<section class="inv-pay">
+        ${(pi.instapay || pi.wallet || pi.instapayLink) && state !== 'paid' ? `<section class="inv-pay">
           <p class="label">${esc(t('payTo', { name: D.ownerName || '' }))}</p>
-          ${pi.instapay ? `<p class="pay-line"><span>InstaPay</span><code dir="ltr">${esc(pi.instapay)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.instapay)}">${esc(t('copy'))}</button></p>` : ''}
-          ${pi.wallet ? `<p class="pay-line"><span>${esc(t('walletShort'))}</span><code dir="ltr">${esc(pi.wallet)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.wallet)}">${esc(t('copy'))}</button></p>` : ''}
+          ${payButtons(pi, C.round2(Math.max(0, I.net - paid)))}
           ${D.ownerPhone ? wa(waLink(D.ownerPhone, t('msgPaidInvoice', { no: I.no, total: money(I.net) })), t('tellPaid'), 'block') : ''}
         </section>` : ''}
         <footer class="inv-foot">
@@ -2199,6 +2234,7 @@
     profHostExempt: el => saveHostDefaults({ hostExempt: el.checked, hostAuto: el.checked || C.num(S.profile.hostFee) > 0 }),
     profHostFee: el => { const v = Math.max(0, C.round2(C.num(el.value))); saveHostDefaults({ hostFee: v, hostAuto: v > 0 || !!S.profile.hostExempt }); },
     payInfo: el => patch(curCart(), { ['payInfo.' + el.dataset.k]: el.value.trim() }),
+    payInfoInsta: el => { const v = splitInsta(el.value); patch(curCart(), { 'payInfo.instapay': v.instapay, 'payInfo.instapayLink': v.instapayLink }); },
     shots: el => readScreenshots(Array.from(el.files || [])),
     receipt: el => readReceipt(Array.from(el.files || [])),
     rcMap: el => { S.rcpt.map[el.dataset.k] = +el.value; render(true); },
@@ -2231,13 +2267,13 @@
       render(true);
     },
     profile: form => {
-      const p = { name: form.name.value.trim(), phone: form.phone.value.trim(), instapay: form.instapay.value.trim(), wallet: form.wallet.value.trim() };
+      const p = Object.assign({ name: form.name.value.trim(), phone: form.phone.value.trim(), wallet: form.wallet.value.trim() }, splitInsta(form.instapay.value));
       const err = $('#p-err');
       if (!p.name) { err.textContent = t('errName'); err.hidden = false; return; }
       if (!C.isValidPhone(p.phone)) { err.textContent = t('errPhone'); err.hidden = false; return; }
       S.profile = Object.assign({}, S.profile, p);
       if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
-      if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(p.name, { instapay: p.instapay, wallet: p.wallet }));
+      if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(p.name, { instapay: p.instapay, instapayLink: p.instapayLink, wallet: p.wallet }));
       if (S.group && S.group.roster && S.group.roster[me()]) guard(S.store.joinGroup(S.gid, Object.assign({}, S.group.roster[me()], { name: p.name, phone: p.phone })));
       toast(t('saved')); go('home');
     },
@@ -2306,17 +2342,18 @@
       const [h, mi] = (form.time.value || '').split(':').map(Number);
       const close = new Date(); close.setHours(h || 0, mi || 0, 0, 0);
       if (close.getTime() <= Date.now() + 60000) close.setDate(close.getDate() + 1);
-      const instapay = form.instapay.value.trim(), wallet = form.wallet.value.trim();
-      if (instapay !== (S.profile.instapay || '') || wallet !== (S.profile.wallet || '')) {
-        S.profile = Object.assign({}, S.profile, { instapay, wallet });
+      const { instapay, instapayLink } = splitInsta(form.instapay.value), wallet = form.wallet.value.trim();
+      if (instapay !== (S.profile.instapay || '') || instapayLink !== (S.profile.instapayLink || '') || wallet !== (S.profile.wallet || '')) {
+        S.profile = Object.assign({}, S.profile, { instapay, instapayLink, wallet });
         if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
+        if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(S.profile.name, { instapay, instapayLink, wallet }));
       }
       const uid = me();
       const cart = {
         title: form.title.value.trim(), ownerId: uid, ownerName: S.profile.name, ownerPhone: S.profile.phone,
         createdAt: Date.now(), closesAt: close.getTime(),
         candidates: [], candidateInfo: {}, votes: {}, members: {}, payments: {}, charges: [], roundUp: true,
-        payInfo: { instapay, wallet },
+        payInfo: { instapay, instapayLink, wallet },
         hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee) || 0, hostFeeLabel: t('hostFeeLabel')
       };
       const chosen = S.sel.map(id => S.restaurants.find(r => r.id === id)).filter(Boolean);
@@ -2419,6 +2456,10 @@
         S.profile = LS.get('tarweeqa.profile');
         const sp = S.store.person;
         if (sp && sp.name) { S.profile = Object.assign({ instapay: '', wallet: '' }, S.profile || {}, sp.data || {}, { name: sp.name, phone: (S.profile && S.profile.phone) || ('0' + String(sp.phone || '').replace(/^20/, '')) }); LS.set('tarweeqa.profile', S.profile); }
+        else if (S.profile && S.profile.name && C.isValidPhone(S.profile.phone || '')) {
+          // signed in on this device before the phone registry existed: register the number now, so other devices find this person
+          try { await S.store.register(S.profile.phone, S.profile.name, { instapay: S.profile.instapay || '', instapayLink: S.profile.instapayLink || '', wallet: S.profile.wallet || '' }); } catch (e) { console.warn(e); }
+        }
       } else if (CFG.firebase) {
         S.store = new CloudStore(CFG);
         await S.store.init();

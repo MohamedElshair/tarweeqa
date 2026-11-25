@@ -573,3 +573,9 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .chip-check:has(input:checked) { background: #e9f5ee; border-color: #8cc7a3; }
 .shared-mine { margin-top: 6px; }
 .link-btn { background: none; border: 0; color: var(--accent, #1b6b45); text-decoration: underline; font-size: 13px; padding: 0 4px; cursor: pointer; }
+
+/* InstaPay pay button */
+.insta-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px 16px; border-radius: 12px; background: #5b2a86; color: #fff !important; font-weight: 700; font-size: 17px; text-decoration: none; margin: 6px 0 4px; box-shadow: 0 4px 14px rgba(91,42,134,.25); }
+.insta-btn:active { transform: translateY(1px); }
+.insta-note { margin: 0 0 8px; }
+.send-to { margin: 4px 0 8px; }

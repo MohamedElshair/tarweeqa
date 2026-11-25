@@ -1,6 +1,10 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    instapayAny: 'InstaPay (العنوان أو الرابط، أو الصق رسالة إنستاباي كلها)', payInsta: 'ادفع {a} بإنستاباي', payInstaNote: 'هيفتح إنستاباي على الحساب على طول، اكتب المبلغ {a}.',
+    copyAmount: 'انسخ المبلغ', msgPayLink: 'ادفع بإنستاباي على طول: {link}', instaLinkOk: 'رابط الدفع اتحفظ ({h}): هيظهر للناس زرار «ادفع بإنستاباي».',
+    noOneElse: 'مفيش حد غيرك في الطلب ده، فمفيش فواتير تتبعت. ضيف الناس من تبويب «الناس» (ضيف حد للطلب)، أو ابعتلهم لينك الطلب يدخلوا يطلبوا.',
+    willSendTo: 'هتتبعت لـ: {s}', noPhoneTag: '(من غير موبايل: هتنسخ الرسالة)',
     sharedTitle: 'صنف مشترك (ميه، طبق للترابيزة…)', sharedHint: 'صنف واحد بيتقسم بالتساوي على اللي تختارهم. الاسم بيقترح من المنيو والسعر بيتملى لوحده.',
     sharedPh: 'مثلاً: ميه كبيرة', sharedWho: 'مين هيتقسم عليهم؟', all: 'الكل', none: 'ولا حد', sharedAdd: 'ضيف الصنف المشترك',
     sharedNeedPrice: 'اكتب السعر', sharedNeedPeople: 'اختار شخص واحد على الأقل', sharedAdded: 'اتقسم على {n}: {a} على الواحد', sharedWith: 'مشترك ÷{n}',
@@ -179,6 +183,10 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    instapayAny: 'InstaPay (handle or link, or paste the whole InstaPay message)', payInsta: 'Pay {a} with InstaPay', payInstaNote: 'Opens InstaPay on the account directly; enter {a}.',
+    copyAmount: 'Copy amount', msgPayLink: 'Pay with InstaPay directly: {link}', instaLinkOk: 'Payment link saved ({h}): people get a "Pay with InstaPay" button.',
+    noOneElse: 'Nobody else is in this order, so there are no invoices to send. Add people from the People tab (Add someone), or send them the order link to order themselves.',
+    willSendTo: 'Will be sent to: {s}', noPhoneTag: '(no mobile: you copy the message)',
     sharedTitle: 'Shared item (water, a plate for the table…)', sharedHint: 'One item split equally between the people you pick. The name is suggested from the menu and the price fills in.',
     sharedPh: 'e.g. large water', sharedWho: 'Split between', all: 'All', none: 'None', sharedAdd: 'Add shared item',
     sharedNeedPrice: 'Enter the price', sharedNeedPeople: 'Pick at least one person', sharedAdded: 'Split between {n}: {a} each', sharedWith: 'shared ÷{n}',
