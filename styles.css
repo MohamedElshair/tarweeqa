@@ -714,3 +714,7 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .ac-title { display: flex; align-items: center; }
 .ch-name { display: flex; align-items: center; gap: 10px; }
 .ch-name .rlogo { width: 44px; height: 44px; }
+.rl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rl-row { display: flex; align-items: center; gap: 6px; }
+.rl-row > .row-link { flex: 1; min-width: 0; }
+.rl-acts { display: flex; gap: 4px; flex: none; }

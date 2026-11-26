@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    reimportAll: 'استورد الأصناف من كل الصور', reimport: 'استورد الأصناف من الصورة دي تاني', reimportShort: 'استورد', reimportNone: 'مفيش صورة محفوظة أقرا منها.', deletePic: 'امسح الصورة', picDeleted: 'اتمسحت الصورة والأسعار اللي جت منها', rcKindMenu: 'منيو', rcKindReceipt: 'إيصال طلب', picsHint: '«استورد» بيقرا الصورة تاني ويضيف الأصناف أو يحدّث أسعارها. ولو عايز تضيف صور جديدة ارفعها من زرار السكرين شوت فوق.', menuCleared: 'المنيو اتمسح. دوس «حفظ» عشان يتسجل.',
     logoAdd: '📷 ارفع لوجو المطعم', logoChange: 'غيّر اللوجو', logoRemove: 'شيل اللوجو', logoHint: 'صورة مربعة أو سكرين شوت للوجو. هيظهر في الطلبات وقائمة المطاعم. متنساش تدوس «حفظ».', logoReady: 'اللوجو جاهز. دوس «حفظ».', logoFail: 'ماقدرتش أقرا الصورة دي. جرّب صورة تانية.',
     payCarried: '{a} اترحّلت على فاتورة {when}', stCarried: 'اترحّل على الفاتورة اللي بعدها',
     changeNumber: 'غيّر الرقم', newHere: 'الرقم ده جديد علينا. اكتب اسمك واختار رقم سري، وخلاص.', pinChoose: 'اختار رقم سري (4 لـ 6 أرقام)',
@@ -262,6 +263,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    reimportAll: 'Re-import items from all pictures', reimport: 'Read items from this picture again', reimportShort: 'Re-import', reimportNone: 'No saved picture to read.', deletePic: 'Delete picture', picDeleted: 'Picture and the prices from it deleted', rcKindMenu: 'Menu', rcKindReceipt: 'Order receipt', picsHint: '“Re-import” reads the picture again and adds items or updates their prices. To add new pictures, use the screenshot button above.', menuCleared: 'Menu cleared. Tap “Save” to keep it.',
     logoAdd: '📷 Upload restaurant logo', logoChange: 'Change logo', logoRemove: 'Remove logo', logoHint: 'A square picture or a screenshot of the logo. It shows on orders and the restaurant list. Remember to tap “Save”.', logoReady: 'Logo ready. Tap “Save”.', logoFail: 'Couldn’t read that picture. Try another one.',
     payCarried: '{a} moved to the {when} bill', stCarried: 'Moved to the next bill',
     changeNumber: 'Change', newHere: 'This number is new to us. Type your name and choose a PIN, that’s it.', pinChoose: 'Choose a PIN (4 to 6 digits)',

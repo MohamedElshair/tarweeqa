@@ -124,6 +124,10 @@
   async function guard(p) {
     try { return await p; } catch (e) { console.warn(e); toast(t('errWrite'), 'warn'); return null; }
   }
+  // for calls that return nothing: true when it worked
+  async function guardOk(p) {
+    try { await p; return true; } catch (e) { console.warn(e); toast(t('errWrite'), 'warn'); return false; }
+  }
 
   /* money between people: pairs[host][person] (see core.js) */
   let _pairs = null, _pairsKey = '';
@@ -1800,14 +1804,14 @@
       const k = 'so_' + el.dataset.uid;
       if (S.confirmKey !== k) { S.confirmKey = k; return render(true); }
       S.confirmKey = null;
-      if (await guard(S.store.adminSignout(el.dataset.uid)) === null) return;
+      if (!(await guardOk(S.store.adminSignout(el.dataset.uid)))) return;
       toast(t('admSignedOut')); loadAdmin();
     },
     admRemoveMember: async el => {
       const k = 'rm_' + el.dataset.gid + '_' + el.dataset.uid;
       if (S.confirmKey !== k) { S.confirmKey = k; return render(true); }
       S.confirmKey = null;
-      if (await guard(S.store.adminRemoveMember(el.dataset.gid, el.dataset.uid)) === null) return;
+      if (!(await guardOk(S.store.adminRemoveMember(el.dataset.gid, el.dataset.uid)))) return;
       toast(t('saved')); loadAdmin();
     },
     admGroup: el => { setGroup(el.dataset.id, true); render(true); },
@@ -1864,7 +1868,7 @@
       await saveDelivery({ label: label || p.name, lat: p.lat, lng: p.lng, address: p.address, placeId: p.id });
     },
     draftDelItem: el => { syncDraft(); S.draft.items = S.draft.items.filter(i => i.id !== el.dataset.id); render(true); },
-    clearMenu: () => { if (S.confirmKey !== 'clearMenu') { syncDraft(); S.confirmKey = 'clearMenu'; return render(true); } syncDraft(); S.draft.items = []; S.confirmKey = null; render(true); },
+    clearMenu: () => { if (S.confirmKey !== 'clearMenu') { syncDraft(); S.confirmKey = 'clearMenu'; return render(true); } syncDraft(); S.draft.items = []; S.confirmKey = null; render(true); toast(t('menuCleared')); },
     parseMenu: () => {
       syncDraft();
       const ta = $('#paste-menu');
@@ -1886,7 +1890,6 @@
       if (!d.name.trim()) return toast(t('errRestName'), 'warn');
       if (PL.available() && !d.id && !d.place) return toast(t('placeNeed'), 'warn');
       if (d.deliveryKm !== undefined) { const km = C.round2(C.num(d.deliveryKm)); if (km > 0) d.deliveryKm = km; else delete d.deliveryKm; }
-      if (!d.items.length) return toast(t('errNoItems'), 'warn');
       d.items = d.items.map(({ fresh, oldPrice, ...it }) => it);
       delete d.priceSource;
       const id = await guard(S.store.saveRestaurant(S.gid, d));
@@ -2066,6 +2069,17 @@
     shNone: () => document.querySelectorAll('.sh-people input').forEach(i => { i.checked = false; }),
     manualMenu: () => { const n = $('#ai-name'); if (n) { n.scrollIntoView({ behavior: 'smooth', block: 'center' }); n.focus(); } },
     closeReceipt: () => { S.rview = null; render(true); },
+    reimport: el => reimportPictures([el.dataset.id]),
+    reimportAll: () => reimportPictures(((S.draft && S.rlist[S.draft.name]) || []).filter(r => r.hasImage).map(r => r.id)),
+    deleteReceipt: async el => {
+      const id = el.dataset.id, k = 'delrc_' + id;
+      if (S.confirmKey !== k) { syncDraft(); S.confirmKey = k; return render(true); }
+      S.confirmKey = null; syncDraft();
+      if (!(await guardOk(S.store.deleteReceipt(S.gid, id)))) return;
+      const n = S.draft && S.draft.name;
+      if (n) { S.rlist[n] = (S.rlist[n] || []).filter(r => r.id !== id); loadReceipts(n); loadHistory(n, true); }
+      toast(t('picDeleted')); render(true);
+    },
     copyItems: () => {
       syncDraft();
       const src = S.restaurants.find(r => r.id === (S.copyFrom || ($('#copy-from') || {}).value));
@@ -2178,7 +2192,9 @@
         }
         const en = best ? best.text : '';
         const arabic = (a.text.match(/[\u0600-\u06FF]/g) || []).length;
-        const useAr = arabic >= 3 ? !(best && best.conf >= 85 && a.conf < 55) : (arabic > 0 && (!best || a.conf + 8 >= best.conf));
+        // English menus: the Arabic model invents letters on Latin text, so trust a confident English reading of real words
+        const latinWords = best ? (best.text.match(/[A-Za-z]{3,}/g) || []).length : 0;
+        const useAr = arabic >= 3 ? !(best && ((best.conf >= 85 && a.conf < 55) || (latinWords >= 2 && best.conf >= 70 && best.conf > a.conf + 5))) : (arabic > 0 && (!best || a.conf + 8 >= best.conf));
         lines.push({ ar: useAr ? a.text : en, en });
       }
       lines.push({ sep: true, ar: '', en: '' });
@@ -2194,7 +2210,8 @@
     return (name ? name + ' ' : '') + price + ' ج.م';
   }
 
-  async function readScreenshots(files) {
+  async function readScreenshots(files, opts) {
+    opts = opts || {};
     if (!files.length || (S.ocr && S.ocr.busy)) return;
     syncDraft();
     const status = msg => { S.ocr.msg = msg; const el = $('#ocr-status'); if (el) { el.hidden = false; el.textContent = msg; } };
@@ -2273,12 +2290,12 @@
           const menuRec = { kind: 'menu', items: res.items.map(i => ({ name: i.name, unit: i.price, qty: 1 })) };
           if (name && S.store.saveReceipt) {
             status(t('rcSaving'));
-            try { await S.store.saveReceipt(S.gid, { restName: name, at, parsed: menuRec, image: await shrinkImages(files) }); } catch (e) { console.warn(e); }
+            if (!opts.reimport) { try { await S.store.saveReceipt(S.gid, { restName: name, at, parsed: menuRec, image: await shrinkImages(files) }); } catch (e) { console.warn(e); } }
             const keep = clone(S.draft); keep.items = keep.items.map(({ fresh, oldPrice, ...it }) => it); delete keep.priceSource;
             const id = await guard(S.store.saveRestaurant(S.gid, keep));
             if (id) S.draft.id = id;
             loadHistory(name, true); loadReceipts(name);
-          } else S.pendingMenu = { at, parsed: menuRec, image: await shrinkImages(files) };
+          } else if (!opts.reimport) S.pendingMenu = { at, parsed: menuRec, image: await shrinkImages(files) };
         }
         S.ocr.busy = false; S.ocr.error = !added;
         S.ocr.msg = added ? t('shotsDone', { n: added, m: files.length }) + (res.skipped.length ? ' ' + t('skippedLines', { s: res.skipped.slice(0, 6).join(' / ') }) : '') : t('shotsNone');
@@ -2621,10 +2638,48 @@
   function savedReceipts(restName) {
     const list = S.rlist[restName] || [];
     if (!list.length) return '';
-    return `<p class="label rl-head">${esc(t('receiptsSaved'))} <small class="muted">(${list.length})</small></p>
-      <ul class="rlist">${list.map(r => `<li><button class="row-link" data-act="viewReceipt" data-id="${esc(r.id)}">
-        <span>🧾 <b>${esc(r.at ? dayFmt(r.at) : '—')}</b>${r.orderNo ? ` <small class="muted" dir="ltr">#${esc(r.orderNo)}</small>` : ''}</span>
-        <small class="muted tnum">${esc(t('itemsCount', { n: r.items }))}${r.total != null ? ' · ' + esc(money(r.total)) : ''}</small></button></li>`).join('')}</ul>`;
+    const withImg = list.filter(r => r.hasImage);
+    const busy = S.ocr && S.ocr.busy;
+    return `<div class="rl-head"><p class="label">${esc(t('receiptsSaved'))} <small class="muted">(${list.length})</small></p>
+        ${isAdmin() && withImg.length > 1 ? `<button class="ghost small" data-act="reimportAll"${busy ? ' disabled' : ''}>↻ ${esc(t('reimportAll'))}</button>` : ''}</div>
+      <ul class="rlist">${list.map(r => {
+        const ck = 'delrc_' + r.id;
+        return `<li class="rl-row"><button class="row-link" data-act="viewReceipt" data-id="${esc(r.id)}">
+          <span>${r.kind === 'menu' ? '📋' : '🧾'} <b>${esc(r.at ? dayFmt(r.at) : '—')}</b> <small class="muted">${esc(r.kind === 'menu' ? t('rcKindMenu') : t('rcKindReceipt'))}</small>${r.orderNo ? ` <small class="muted" dir="ltr">#${esc(r.orderNo)}</small>` : ''}</span>
+          <small class="muted tnum">${esc(t('itemsCount', { n: r.items }))}${r.total != null ? ' · ' + esc(money(r.total)) : ''}</small></button>
+          ${isAdmin() ? `<span class="rl-acts">
+            ${r.hasImage ? `<button class="ghost small" data-act="reimport" data-id="${esc(r.id)}"${busy ? ' disabled' : ''} title="${esc(t('reimport'))}">↻ ${esc(t('reimportShort'))}</button>` : ''}
+            <button class="${S.confirmKey === ck ? 'danger-ghost' : 'ghost'} small" data-act="deleteReceipt" data-id="${esc(r.id)}" aria-label="${esc(t('deletePic'))}">${S.confirmKey === ck ? esc(t('confirmAgain')) : '🗑'}</button>
+          </span>` : ''}</li>`;
+      }).join('')}</ul>
+      ${isAdmin() ? `<p class="muted small-text">${esc(t('picsHint'))}</p>` : ''}`;
+  }
+  // a saved picture back into separate pages the reader can handle (menus are saved as one long picture)
+  async function picturePages(dataUrl) {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl; });
+    const W = img.naturalWidth, H = img.naturalHeight, step = 1500, overlap = 160, out = [];
+    for (let y = 0; y < H; y += step - overlap) {
+      const h = Math.min(step, H - y);
+      const c = document.createElement('canvas'); c.width = W; c.height = h;
+      c.getContext('2d').drawImage(img, 0, y, W, h, 0, 0, W, h);
+      const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
+      out.push(new File([blob], 'page' + out.length + '.jpg', { type: 'image/jpeg' }));
+      if (y + h >= H) break;
+    }
+    return out;
+  }
+  async function reimportPictures(ids) {
+    if (!S.draft || (S.ocr && S.ocr.busy)) return;
+    syncDraft();
+    let files = [];
+    try {
+      for (const id of ids) {
+        const r = await S.store.receipt(S.gid, id);
+        if (r && r.image) files = files.concat(await picturePages(r.image));
+      }
+    } catch (e) { console.warn(e); return toast(t('shotsFail'), 'warn'); }
+    if (!files.length) return toast(t('reimportNone'), 'warn');
+    await readScreenshots(files, { reimport: true });
   }
   async function openReceipt(id) {
     S.rview = { id, busy: true }; render(true);
@@ -3148,7 +3203,7 @@
     },
     admRename: async form => {
       const name = form.name.value.trim(); if (!name) return toast(t('errName'), 'warn');
-      if (await guard(S.store.adminRenamePerson(form.dataset.uid, name)) === null) return;
+      if (!(await guardOk(S.store.adminRenamePerson(form.dataset.uid, name)))) return;
       toast(t('saved')); loadAdmin();
     },
     welcome: async form => {

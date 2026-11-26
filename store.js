@@ -110,7 +110,12 @@
     }
     async receipts(gid, restName) {
       return (this.data.receipts || []).filter(x => x.gid === gid && x.restName === restName).sort((a, b) => b.at - a.at || b.ms - a.ms)
-        .map(x => ({ id: x.id, at: x.at, orderNo: x.orderNo, cartId: x.cartId, ms: x.ms, items: ((x.parsed || {}).items || []).length, total: (x.parsed || {}).total, hasImage: !!x.image }));
+        .map(x => ({ id: x.id, at: x.at, orderNo: x.orderNo, cartId: x.cartId, ms: x.ms, items: ((x.parsed || {}).items || []).length, total: (x.parsed || {}).total, hasImage: !!x.image, kind: (x.parsed || {}).kind || 'receipt' }));
+    }
+    async deleteReceipt(gid, id) {
+      const list = this.data.receipts || []; const i = list.findIndex(r => r.id === id); if (i < 0) return;
+      try { localStorage.removeItem('tarweeqa.rimg.' + id); } catch (e) { }
+      list.splice(i, 1); this.persist();
     }
     async receipt(gid, id) { const x = (this.data.receipts || []).find(r => r.id === id); return x ? clone({ id: x.id, at: x.at, orderNo: x.orderNo, cartId: x.cartId, restName: x.restName, parsed: x.parsed, image: x.image ? localStorage.getItem('tarweeqa.rimg.' + x.id) : null }) : null; }
     async invoice(gid, cid, key, secret) {
@@ -252,6 +257,7 @@
     saveReceipt(gid, r) { return this.rpc('tq_save_receipt', { p_gid: gid, p_cart_id: r.cartId || null, p_rest_name: r.restName, p_order_no: r.orderNo || '', p_at: r.at, p_parsed: r.parsed, p_image: r.image || null }); }
     receipts(gid, restName) { return this.rpc('tq_receipts_list', { p_gid: gid, p_rest_name: restName }); }
     receipt(gid, id) { return this.rpc('tq_receipt_get', { p_gid: gid, p_id: id }); }
+    deleteReceipt(gid, id) { return this.rpc('tq_delete_receipt', { p_gid: gid, p_id: id }); }
     invoice(gid, cid, key, secret) { return this.rpc('tq_invoice', { p_gid: gid, p_cid: cid, p_key: key, p_secret: secret }, true); }
     static nulls(patch) { const o = {}; for (const k of Object.keys(patch)) o[k] = patch[k] === undefined ? null : patch[k]; return o; }
 
