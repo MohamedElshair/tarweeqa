@@ -181,8 +181,8 @@
 
 
   /* ---------------- Supabase store (what the live site uses) ----------------
-     No sign-in screens: each browser keeps a secret device token, and the database functions
-     (supabase/schema.sql) check every read and write against it. Changes arrive by asking the
+     Each browser keeps a secret device token. Signing in (phone + PIN, tq_login) links that token to the
+     person; the database functions (supabase/schema.sql + supabase/migrations) check every read and write against it. Changes arrive by asking the
      database every few seconds for what changed since the last time. */
   class SupaStore {
     constructor(cfg) {
@@ -212,13 +212,41 @@
     async init() { const r = await this.rpc('tq_hello'); this._uid = r.uid; this.person = r.person || null; }
     hasData() { return true; }
     uid() { return this._uid; }
-    /* the phone number is the person: a number seen before brings back that person on this device */
-    async register(phone, name, data) {
-      const r = await this.rpc('tq_register', { p_phone: phone, p_name: name, p_data: data || {} });
-      if (r.uid !== this._uid) { this._uid = r.uid; this.g.forEach(c => { c.since = 0; c.member = false; }); }
+    /* accounts: phone + PIN. A new number makes an account; a number seen before needs its PIN (tq_login). */
+    becomes(uid) { if (uid !== this._uid) { this._uid = uid; this.g.forEach(c => { c.since = 0; c.member = false; }); } }
+    async register(phone, name, data, pin) {
+      const args = { p_phone: phone, p_name: name, p_data: data || {} };
+      if (pin) args.p_pin = pin;
+      const r = await this.rpc('tq_register', args);
+      this.becomes(r.uid);
       this.person = r.person; await this.refreshGroups();
       return r;
     }
+    checkPhone(phone) { return this.rpc('tq_check_phone', { p_phone: phone }); }
+    /* returns {error: 'no_account' | 'wrong_pin' | 'locked' | 'no_pin', left?, until?} or the person */
+    async login(phone, pin) {
+      const r = await this.rpc('tq_login', { p_phone: phone, p_pin: pin });
+      if (!r || r.error) return r || { error: 'unknown' };
+      this.becomes(r.uid);
+      this.person = r.person; await this.refreshGroups();
+      return r;
+    }
+    async setPin(pin, old) {
+      const r = await this.rpc('tq_set_pin', { p_pin: pin, p_old: old || null });
+      if (r && r.person) this.person = r.person;
+      return r;
+    }
+    /* sign out this device: the old device key is forgotten and a fresh one starts as nobody */
+    async logout() {
+      try { await this.rpc('tq_logout'); } catch (e) { console.warn(e); }
+      this.token = rid(40); LS.set('tarweeqa.token', this.token);
+    }
+    history() { return this.rpc('tq_my_history'); }
+    adminOverview() { return this.rpc('tq_admin_overview'); }
+    adminResetPin(uid) { return this.rpc('tq_admin_reset_pin', { p_uid: uid }); }
+    adminSignout(uid) { return this.rpc('tq_admin_signout', { p_uid: uid }); }
+    async adminRemoveMember(gid, uid) { await this.after(gid, this.rpc('tq_admin_remove_member', { p_gid: gid, p_uid: uid })); }
+    adminRenamePerson(uid, name) { return this.rpc('tq_admin_rename_person', { p_uid: uid, p_name: name }); }
     saveProfileRemote(name, data) { return this.rpc('tq_save_profile', { p_name: name, p_data: data || {} }); }
     priceHistory(gid, restName) { return this.rpc('tq_price_history', { p_gid: gid, p_rest_name: restName }); }
     saveReceipt(gid, r) { return this.rpc('tq_save_receipt', { p_gid: gid, p_cart_id: r.cartId || null, p_rest_name: r.restName, p_order_no: r.orderNo || '', p_at: r.at, p_parsed: r.parsed, p_image: r.image || null }); }

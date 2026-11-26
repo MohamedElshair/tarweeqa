@@ -543,7 +543,23 @@
     return { counts, leader: order[0] || null, total: Object.keys(cart.votes || {}).length };
   }
 
-  const api = { withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, computeBill, balances, prevFor, aggregate, tallyVotes, DEFAULT_SPLIT };
+  /* distance on the map (straight line, km) — free, no Google call */
+  function distanceKm(a, b) {
+    if (!a || !b || !isFinite(a.lat) || !isFinite(a.lng) || !isFinite(b.lat) || !isFinite(b.lng)) return null;
+    const R = 6371, rad = x => x * Math.PI / 180;
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  // where a restaurant stands against the delivery point: near / far / unknown (no verified place or no delivery point)
+  function reach(rest, point, defaultKm) {
+    const km = distanceKm(point, rest && rest.place);
+    const limit = num(rest && rest.deliveryKm) || defaultKm || 3;
+    if (km == null) return { km: null, limit, state: rest && rest.place ? 'nopoint' : 'unverified' };
+    return { km: round2(km), limit, state: km <= limit ? 'near' : 'far' };
+  }
+
+  const api = { distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, computeBill, balances, prevFor, aggregate, tallyVotes, DEFAULT_SPLIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TarweeqaCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
