@@ -189,13 +189,16 @@
     if (!S.booted) return `<div class="boot">${esc(t('appName'))}</div>`;
     if (isLocal() ? (!S.profile || !S.profile.name) : !person()) return viewWelcome();
     if (needsPin()) return viewSetPin();
-    if (S.route.name === 'admin' && isSiteAdmin()) return viewAdmin();
-    if (!S.gid || !S.group) return (S.route.name === 'profile' && !isLocal()) ? `<main class="page">${back('home')}${viewProfile()}</main>` : viewStart();
+    if (!S.gid || !S.group) {
+      if (S.route.name === 'admin' && isSiteAdmin()) return `<main class="page">${back('home')}${viewAdmin()}</main>`;
+      return (S.route.name === 'profile' && !isLocal()) ? `<main class="page">${back('home')}${viewProfile()}</main>` : viewStart();
+    }
+    if (S.route.name === 'admin' && !isSiteAdmin()) S.route = { name: 'home' };
     if (ADMIN_ROUTES.includes(S.route.name) && !isAdmin()) S.route = { name: 'home' };
     const r = S.route.name;
     const body = ({
       home: viewHome, newOrder: viewNewOrder, cart: viewCart, restaurants: viewRestaurants,
-      restaurant: viewRestaurantEdit, money: viewMoney, group: viewGroup, profile: viewProfile
+      restaurant: viewRestaurantEdit, money: viewMoney, group: viewGroup, profile: viewProfile, admin: viewAdmin
     }[r] || viewHome)();
     return shell(body) + receiptModal();
   }
@@ -258,37 +261,40 @@
 
   /* ---------- welcome & start ---------- */
   /* sign in / new account (live site). The phone number is the account, the PIN proves it is you. */
-  const pinInput = (id, name, ac) => `<input id="${id}" name="${name}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" dir="ltr" class="pin-input tnum" autocomplete="${ac}">`;
+  const pinInput = (id, name, ac) => `<input id="${id}" name="${name}" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="6" dir="ltr" class="pin-input tnum" autocomplete="${ac}">`;
   function viewWelcome() {
     if (isLocal()) return viewWelcomeDemo();
-    const mode = S.authMode || 'login';
+    const step = S.authStep || 'phone';
     const A = S.authMsg;
     const phone = esc(S.authPhone || '');
+    const err = `<p class="form-error" id="w-err"${A ? '' : ' hidden'}>${esc(A || '')}</p>`;
+    const phoneShown = `<p class="pay-line"><span>${esc(t('yourPhone'))}</span><span><code dir="ltr">${phone}</code> <button type="button" class="ghost small" data-act="authBack">${esc(t('changeNumber'))}</button></span></p>`;
+    let form;
+    if (step === 'pin') form = `<form class="panel form" data-submit="login" novalidate>
+        ${phoneShown}
+        <label class="field"><span>${esc(t('pinLabel'))}</span>${pinInput('l-pin', 'pin', 'current-password')}</label>
+        ${err}
+        <button class="primary block" type="submit">${esc(t('authLoginBtn'))}</button>
+        <details class="forgot"><summary>${esc(t('forgotPin'))}</summary><p class="muted small-text">${esc(t('forgotPinHint'))}</p></details>
+      </form>`;
+    else if (step === 'new') form = `<form class="panel form" data-submit="signup" novalidate>
+        <p class="muted small-text">${esc(t('newHere'))}</p>
+        ${phoneShown}
+        <label class="field"><span>${esc(t('yourName'))}</span><input id="s-name" name="name" autocomplete="name"></label>
+        <label class="field"><span>${esc(t('pinChoose'))}</span>${pinInput('s-pin', 'pin', 'new-password')}<small>${esc(t('pinRule'))}</small></label>
+        ${err}
+        <button class="primary block" type="submit">${esc(t('authSignupBtn'))}</button>
+      </form>`;
+    else form = `<form class="panel form" data-submit="authPhone" novalidate>
+        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="a-phone" name="phone" type="tel" inputmode="tel" dir="ltr" autocomplete="tel" placeholder="01012345678" value="${phone}"><small>${esc(t('phoneOnlyHint'))}</small></label>
+        ${err}
+        <button class="primary block" type="submit">${esc(t('continueBtn'))}</button>
+      </form>`;
     return `<main class="page welcome">
       <div class="welcome-mark">${logoSvg()}</div>
       <h1>${esc(t('welcomeTitle'))}</h1>
-      <p class="lead">${esc(t('welcomeSub'))}</p>
-      <div class="seg auth-seg" role="tablist">
-        <button class="${mode === 'login' ? 'on' : ''}" data-act="authMode" data-m="login" role="tab" aria-selected="${mode === 'login'}">${esc(t('authLogin'))}</button>
-        <button class="${mode === 'signup' ? 'on' : ''}" data-act="authMode" data-m="signup" role="tab" aria-selected="${mode === 'signup'}">${esc(t('authSignup'))}</button>
-      </div>
-      ${mode === 'login' ? `<form class="panel form" data-submit="login" novalidate>
-        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="l-phone" name="phone" type="tel" inputmode="tel" dir="ltr" autocomplete="tel" placeholder="01012345678" value="${phone}"></label>
-        <label class="field"><span>${esc(t('pinLabel'))}</span>${pinInput('l-pin', 'pin', 'current-password')}<small>${esc(t('pinLoginHint'))}</small></label>
-        <p class="form-error" id="w-err"${A ? '' : ' hidden'}>${esc(A || '')}</p>
-        <button class="primary block" type="submit">${esc(t('authLoginBtn'))}</button>
-        <details class="forgot"><summary>${esc(t('forgotPin'))}</summary><p class="muted small-text">${esc(t('forgotPinHint'))}</p></details>
-      </form>` : `<form class="panel form" data-submit="signup" novalidate>
-        <label class="field"><span>${esc(t('yourName'))}</span><input id="s-name" name="name" autocomplete="name"></label>
-        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="s-phone" name="phone" type="tel" inputmode="tel" dir="ltr" autocomplete="tel" placeholder="01012345678" value="${phone}"><small>${esc(t('phoneHintSignup'))}</small></label>
-        <div class="grid2">
-          <label class="field"><span>${esc(t('pinNew'))}</span>${pinInput('s-pin', 'pin', 'new-password')}</label>
-          <label class="field"><span>${esc(t('pinAgain'))}</span>${pinInput('s-pin2', 'pin2', 'new-password')}</label>
-        </div>
-        <small class="muted">${esc(t('pinRule'))}</small>
-        <p class="form-error" id="w-err"${A ? '' : ' hidden'}>${esc(A || '')}</p>
-        <button class="primary block" type="submit">${esc(t('authSignupBtn'))}</button>
-      </form>`}
+      <p class="lead">${esc(S.pending && S.pending.cid ? t('welcomeOrderSub') : t('welcomeSub'))}</p>
+      ${form}
       <button class="ghost small center" data-act="lang">${esc(t('langSwitch'))}</button>
     </main>`;
   }
@@ -302,10 +308,7 @@
       <p class="lead">${esc(reset ? t('pinResetSub') : t('pinSetSub'))}</p>
       <form class="panel form" data-submit="setPinFirst" novalidate>
         <p class="pay-line"><span>${esc(t('yourPhone'))}</span><code dir="ltr">${esc(localPhone(p.phone))}</code></p>
-        <div class="grid2">
-          <label class="field"><span>${esc(t('pinNew'))}</span>${pinInput('f-pin', 'pin', 'new-password')}</label>
-          <label class="field"><span>${esc(t('pinAgain'))}</span>${pinInput('f-pin2', 'pin2', 'new-password')}</label>
-        </div>
+        <label class="field"><span>${esc(t('pinChoose'))}</span>${pinInput('f-pin', 'pin', 'new-password')}</label>
         <small class="muted">${esc(t('pinRule'))}</small>
         <p class="form-error" id="f-err" hidden></p>
         <button class="primary block" type="submit">${esc(t('pinSave'))}</button>
@@ -370,6 +373,7 @@
         <p class="muted">${esc(t('tagline'))}</p>
       </section>
       ${collectNag()}
+      ${isSiteAdmin() ? `<button class="row-link admin-entry" data-act="nav" data-to="admin">${icoShield()}<span><strong>${esc(t('adminTitle'))}</strong><small class="muted">${esc(t('adminEntryHint'))}</small></span><span class="chev" aria-hidden="true">›</span></button>` : ''}
       ${active.length ? `<section class="stack">${active.map(activeCard).join('')}</section>` : ''}
       ${isAdmin() ? `<button class="${active.length ? 'secondary' : 'primary'} block big" data-act="nav" data-to="newOrder">${plusIcon()} ${esc(active.length ? t('anotherOrder') : t('newOrder'))}</button>`
         : (active.length ? '' : `<p class="empty">${esc(t('memberNoOrder'))}</p>`)}
@@ -1475,19 +1479,9 @@
     let body = '';
     if (!D) body = A.error ? `<p class="empty">${esc(t('errLoadShort'))}</p><button class="secondary" data-act="admReload">${esc(t('retry'))}</button>` : `<div class="loading" aria-busy="true"></div>`;
     else body = ({ overview: admOverview, people: admPeople, rest: admRest, groups: admGroups, money: admMoney }[tab] || admOverview)(D);
-    return `<header class="top">
-        <button class="brand" data-act="nav" data-to="home">${logoSvg()}<span class="brand-txt"><b>${esc(t('appName'))}</b><small>${esc(t('adminTitle'))}</small></span></button>
-        <div class="top-actions">
-          <button class="ghost small" data-act="admReload" aria-label="${esc(t('refresh'))}">↻</button>
-          <button class="ghost small" data-act="lang">${esc(t('langSwitch'))}</button>
-          <button class="secondary small" data-act="nav" data-to="home">${esc(t('backToApp'))}</button>
-        </div>
-      </header>
-      <main class="page admin">
-        <h1>${icoShield()} ${esc(t('adminTitle'))}</h1>
-        <nav class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="tab${k === tab ? ' on' : ''}" data-act="admTab" data-tab="${k}">${esc(l)}</button>`).join('')}</nav>
-        <div class="tab-body">${body}</div>
-      </main>`;
+    return `<div class="section-head"><h1>${icoShield()} ${esc(t('adminTitle'))}</h1><button class="ghost small" data-act="admReload" aria-label="${esc(t('refresh'))}">↻ ${esc(t('refresh'))}</button></div>
+        <nav class="tabs adm-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="tab${k === tab ? ' on' : ''}" data-act="admTab" data-tab="${k}">${esc(l)}</button>`).join('')}</nav>
+        <div class="tab-body adm-body">${body}</div>`;
   }
   function admOverview(D) {
     const debts = adminDebts(D);
@@ -1724,6 +1718,7 @@
   }
 
   const actions = {
+    authBack: () => { S.authStep = 'phone'; S.authMsg = null; render(true); },
     authMode: el => { S.authMode = el.dataset.m; S.authMsg = null; const ph = $('#l-phone') || $('#s-phone'); if (ph) S.authPhone = ph.value.trim(); render(true); },
     logout: async () => {
       await S.store.logout();
@@ -3000,6 +2995,20 @@
     if (pick) { setGroup(pick, true); return go('home'); }
     S.gid = null; S.group = null; go('home');
   }
+  async function doLogin(phone, pin, btn) {
+    let r = null;
+    try { r = await S.store.login(phone, pin); } catch (e) { console.warn(e); r = { error: 'net' }; }
+    if (r.error) {
+      if (btn) btn.disabled = false;
+      if (r.error === 'no_account') { S.authStep = 'new'; render(true); return false; }
+      showErr('#w-err', authError(r.error, r));
+      return false;
+    }
+    adoptPerson(r.person);
+    S.authStep = null;
+    afterAuth();
+    return true;
+  }
   function authError(code, r) {
     if (code === 'no_account') return t('errNoAccount');
     if (code === 'wrong_pin') return t('errWrongPin', { n: (r && r.left) || 0 });
@@ -3019,47 +3028,45 @@
       if (form.dataset.for === 'rest') syncDraft(); else S.dpLabel = (($('#dp-label') || {}).value || '').trim();
       runPlaces(form.dataset.for, q, false);
     },
-    login: async form => {
-      const phone = form.phone.value.trim(), pin = cleanPin(form.pin.value);
-      S.authPhone = phone;
+    authPhone: async form => {
+      const phone = form.phone.value.trim();
+      S.authPhone = phone; S.authMsg = null;
       if (!C.isValidPhone(phone)) return showErr('#w-err', t('errPhone'));
+      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      let st = null;
+      try { st = await S.store.checkPhone(phone); } catch (e) { console.warn(e); if (btn) btn.disabled = false; return showErr('#w-err', t('errWrite')); }
+      if (!st.exists) { S.authStep = 'new'; return render(true); }
+      if (st.locked) { if (btn) btn.disabled = false; return showErr('#w-err', authError('locked', st)); }
+      if (st.hasPin) { S.authStep = 'pin'; render(true); const p = $('#l-pin'); if (p) p.focus(); return; }
+      // account from before PINs: straight in, then one PIN to choose
+      return doLogin(phone, '', btn);
+    },
+    login: async form => {
+      const pin = cleanPin(form.pin.value);
       if (!pinOk(pin)) return showErr('#w-err', t('errPinRule'));
       const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
-      let r = null;
-      try { r = await S.store.login(phone, pin); } catch (e) { console.warn(e); r = { error: 'net' }; }
-      if (r.error) {
-        if (btn) btn.disabled = false;
-        if (r.error === 'no_account') { S.authMode = 'signup'; S.authMsg = t('errNoAccount'); return render(true); }
-        form.pin.value = '';
-        return showErr('#w-err', authError(r.error, r));
-      }
-      adoptPerson(r.person);
-      toast(t('welcomeBack', { name: S.profile.name }));
-      afterAuth();
+      const ok = await doLogin(S.authPhone, pin, btn);
+      if (!ok && form.pin) form.pin.value = '';
     },
     signup: async form => {
-      const name = form.name.value.trim(), phone = form.phone.value.trim(), pin = cleanPin(form.pin.value), pin2 = cleanPin(form.pin2.value);
-      S.authPhone = phone;
+      const name = form.name.value.trim(), phone = S.authPhone, pin = cleanPin(form.pin.value);
       if (!name) return showErr('#w-err', t('errName'));
-      if (!C.isValidPhone(phone)) return showErr('#w-err', t('errPhone'));
       if (!pinOk(pin)) return showErr('#w-err', t('errPinRule'));
-      if (pin !== pin2) return showErr('#w-err', t('errPinMatch'));
       const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
       const old = LS.get('tarweeqa.profile') || {};
       try { await S.store.register(phone, name, { instapay: old.instapay || '', instapayLink: old.instapayLink || '', wallet: old.wallet || '' }, pin); }
       catch (e) {
         console.warn(e); if (btn) btn.disabled = false;
         const m = String((e && e.message) || '');
-        if (m.includes('phone taken')) { S.authMode = 'login'; S.authMsg = t('errPhoneTaken'); return render(true); }
+        if (m.includes('phone taken')) { S.authStep = 'pin'; S.authMsg = t('errPhoneTaken'); return render(true); }
         return showErr('#w-err', authError(m));
       }
       adoptPerson(S.store.person);
       afterAuth();
     },
     setPinFirst: async form => {
-      const pin = cleanPin(form.pin.value), pin2 = cleanPin(form.pin2.value);
+      const pin = cleanPin(form.pin.value);
       if (!pinOk(pin)) return showErr('#f-err', t('errPinRule'));
-      if (pin !== pin2) return showErr('#f-err', t('errPinMatch'));
       let r = null;
       try { r = await S.store.setPin(pin); } catch (e) { console.warn(e); return showErr('#f-err', authError(String(e.message || ''))); }
       if (r && r.error) return showErr('#f-err', authError(r.error, r));
@@ -3299,7 +3306,7 @@
         if (sp && sp.name) adoptPerson(sp);
         else {
           // not signed in on this device: show sign-in, with the number this browser used before
-          if (S.profile && S.profile.phone) { S.authPhone = S.profile.phone; S.authMode = 'login'; }
+          if (S.profile && S.profile.phone) S.authPhone = S.profile.phone;
           S.profile = null;
         }
       } else if (CFG.firebase) {

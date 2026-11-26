@@ -222,6 +222,7 @@
       this.person = r.person; await this.refreshGroups();
       return r;
     }
+    checkPhone(phone) { return this.rpc('tq_check_phone', { p_phone: phone }); }
     /* returns {error: 'no_account' | 'wrong_pin' | 'locked' | 'no_pin', left?, until?} or the person */
     async login(phone, pin) {
       const r = await this.rpc('tq_login', { p_phone: phone, p_pin: pin });
