@@ -19,8 +19,10 @@
     rlist: {},       // restaurant name → saved receipts (no pictures)
     rview: null,     // the receipt open in the viewer
     sendQ: null,     // { cartId, keys, i } — sending invoices one by one
-    invoiceView: null // standalone invoice page data
+    invoiceView: null, // standalone invoice page data
+    pl: null           // Google Maps search: { for: 'rest' | 'dp', q, busy, results, nearby }
   };
+  const PL = window.TarweeqaPlaces;
 
   /* ---------- helpers ---------- */
   const $ = (sel, el) => (el || document).querySelector(sel);
@@ -398,7 +400,9 @@
     const def = new Date(Date.now() + (CFG.defaultCartMinutes || 30) * 60000);
     const hh = String(def.getHours()).padStart(2, '0'), mm = String(Math.ceil(def.getMinutes() / 5) * 5 % 60).padStart(2, '0');
     const q = S.restQuery.trim().toLowerCase();
-    const list = S.restaurants.slice().sort((a, b) => (b.lastOrderedAt || 0) - (a.lastOrderedAt || 0));
+    const all = S.restaurants.slice().sort((a, b) => (b.lastOrderedAt || 0) - (a.lastOrderedAt || 0));
+    const list = all.filter(r => reachOf(r).state !== 'far'), far = all.filter(r => reachOf(r).state === 'far');
+    if (far.length) S.sel = S.sel.filter(id => !far.some(r => r.id === id));
     const n = S.sel.length;
     return `${back('home')}
       <h1>${esc(t('newOrder'))}</h1>
@@ -412,11 +416,15 @@
             const f = r.fees || {};
             return `<label class="pick${on ? ' on' : ''}" data-name="${esc(r.name.toLowerCase())}"${q && !r.name.toLowerCase().includes(q) ? ' hidden' : ''}>
               <input type="checkbox" data-change="pickRest" value="${esc(r.id)}" ${on ? 'checked' : ''}>
-              <span class="pick-main"><strong>${esc(r.name)}</strong>
+              <span class="pick-main"><strong>${esc(r.name)} ${distChip(r)}</strong>
                 <small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))} · ${esc(t('lastOrdered'))}: ${esc(fmtAgo(r.lastOrderedAt))}${f.delivery ? ' · ' + esc(t('delivery')) + ' ' + esc(C.fmtMoney(f.delivery)) : ''}</small></span>
               ${on && n > 1 ? `<span class="pick-n tnum">${S.sel.indexOf(r.id) + 1}</span>` : ''}
             </label>`;
           }).join('')}</div>` : `<p class="empty">${esc(t('noRestaurants'))}</p>`}
+          ${!dPoint() && list.length ? `<p class="muted small-text">${esc(t('dpSetFirst'))}</p>` : ''}
+          ${far.length ? `<details class="far-list"><summary>${esc(t('farGroup', { n: far.length }))}</summary>
+            <p class="muted small-text">${esc(t('farHint'))}</p>
+            <ul>${far.map(r => `<li><span>${esc(r.name)}</span>${distChip(r)}</li>`).join('')}</ul></details>` : ''}
         </section>
         <section class="panel">
           <div class="grid2">
@@ -1126,15 +1134,105 @@
         </form></details>` : ''}`;
   }
 
+  /* ---------- places: delivery point + distance ---------- */
+  const dPoint = () => (S.group && S.group.delivery && isFinite(S.group.delivery.lat)) ? S.group.delivery : null;
+  const defKm = () => C.num(CFG.defaultDeliveryKm) || 3;
+  const reachOf = r => C.reach(r, dPoint(), defKm());
+  const kmTxt = km => t('kmAway', { km: km < 10 ? C.round2(km).toFixed(1) : Math.round(km) });
+  function distChip(r) {
+    const x = reachOf(r);
+    if (x.state === 'unverified') return `<span class="chip chip-out">${esc(t('placeUnverified'))}</span>`;
+    if (x.km == null) return `<span class="chip chip-open">✓ ${esc(t('placeVerified'))}</span>`;
+    return `<span class="chip ${x.state === 'far' ? 'chip-warn' : 'chip-open'} tnum">📍 ${esc(kmTxt(x.km))}</span>`;
+  }
+  function placeResults(kind) {
+    const pl = S.pl;
+    if (!pl || pl.for !== kind) return '';
+    if (pl.busy) return `<p class="muted small-text">${esc(t('placeSearching'))}</p>`;
+    if (!pl.results) return '';
+    if (!pl.results.length) return `<p class="empty">${esc(t('placeNone'))}</p>`;
+    const pt = dPoint();
+    const cur = S.draft && S.draft.id;
+    return `<ul class="place-results">${pl.results.map((p, i) => {
+      const km = kind === 'rest' ? C.distanceKm(pt, p) : null;
+      const lim = kind === 'rest' ? (C.num(S.draft && S.draft.deliveryKm) || defKm()) : 0;
+      const have = kind === 'rest' && S.restaurants.find(r => r.place && r.place.id === p.id && r.id !== cur);
+      const closed = /CLOSED/.test(p.status || '');
+      return `<li><button class="place-row" data-act="${kind === 'rest' ? 'placePick' : 'dpPick'}" data-i="${i}">
+        <span class="pr-main"><strong>${esc(p.name)}</strong><small class="muted">${esc(p.address)}</small></span>
+        <span class="pr-side">${km != null ? `<span class="chip ${km > lim ? 'chip-warn' : 'chip-open'} tnum">${esc(kmTxt(km))}</span>` : ''}${have ? `<span class="chip chip-out">${esc(t('placeAlready'))}</span>` : ''}${closed ? `<span class="chip chip-warn">${esc(t('placeClosed'))}</span>` : ''}</span>
+      </button></li>`;
+    }).join('')}</ul>`;
+  }
+  function searchForm(kind, ph) {
+    const pl = S.pl && S.pl.for === kind ? S.pl : null;
+    return `<form class="place-search" data-submit="placeSearch" data-for="${kind}" novalidate>
+      <input type="search" name="q" id="pl-q-${kind}" placeholder="${esc(ph)}" value="${esc(pl ? pl.q || '' : '')}" enterkeyhint="search">
+      <button class="secondary small" type="submit" ${pl && pl.busy ? 'disabled' : ''}>${esc(t('placeSearchBtn'))}</button>
+    </form>`;
+  }
+  function deliveryPanel() {
+    const pt = dPoint();
+    const editing = !pt || S.dpEdit;
+    return `<section class="panel dp">
+      <div class="section-head"><p class="label">${esc(t('dpTitle'))}</p>${pt && !S.dpEdit ? `<button class="ghost small" data-act="dpEdit">${esc(t('dpChange'))}</button>` : ''}</div>
+      ${pt && !S.dpEdit ? `<p class="dp-now"><strong>${esc(pt.label || t('dpLabelPh'))}</strong>${pt.address ? `<small class="muted">${esc(pt.address)}</small>` : ''}</p>`
+        : `<p class="muted small-text">${esc(pt ? t('dpHint') : t('dpNone') + ' ' + t('dpHint'))}</p>`}
+      ${editing ? `<label class="field"><span>${esc(t('dpLabel'))}</span><input id="dp-label" value="${esc(S.dpLabel != null ? S.dpLabel : (pt && pt.label) || '')}" placeholder="${esc(t('dpLabelPh'))}"></label>
+        <button class="primary block" data-act="dpHere">${esc(t('dpHere'))}</button>
+        ${PL.available() ? `<p class="label small-text">${esc(t('dpSearch'))}</p>${searchForm('dp', t('dpSearchPh'))}${placeResults('dp')}` : ''}` : ''}
+    </section>`;
+  }
+  function placePanel(d) {
+    const p = d.place;
+    const x = reachOf(d);
+    const on = PL.available();
+    return `<section class="panel place">
+      <p class="label">${esc(t('placeTitle'))}</p>
+      ${p && !S.placeEdit ? `<div class="place-card">
+          <span class="pr-main"><strong>${esc(p.name)}</strong><small class="muted">${esc(p.address || '')}</small>
+            <span class="place-meta"><span class="chip chip-open">✓ ${esc(t('placeVerified'))}</span>${x.km != null ? `<span class="chip ${x.state === 'far' ? 'chip-warn' : 'chip-open'} tnum">📍 ${esc(kmTxt(x.km))}</span>` : ''}
+            ${p.mapsUrl ? `<a class="ghost small" href="${esc(p.mapsUrl)}" target="_blank" rel="noopener">${esc(t('placeOpenMap'))} ↗</a>` : ''}</span></span>
+          ${on ? `<button class="ghost small" data-act="placeEdit">${esc(t('placeChange'))}</button>` : ''}
+        </div>
+        ${x.state === 'far' ? `<p class="warn-text small-text">${esc(t('placeFarWarn', { km: C.round2(x.km).toFixed(1), max: x.limit }))}</p>` : ''}`
+      : on ? `<p class="muted small-text">${esc(d.id && !p ? t('placeUnverifiedHint') : t('placeHint'))}</p>
+          ${searchForm('rest', t('placeSearchPh'))}
+          ${dPoint() ? `<button class="ghost small" data-act="placeNearby">📍 ${esc(t('placeNearbyBtn'))}</button>` : `<p class="muted small-text">${esc(t('dpSetFirst'))}</p>`}
+          ${placeResults('rest')}`
+      : `<p class="muted small-text">${esc(t('mapsOff'))}</p>`}
+      <div class="grid2">
+        <label class="field"><span>${esc(t('deliveryKm'))}</span><input id="r-km" class="tnum" inputmode="decimal" data-draft="deliveryKm" value="${esc(d.deliveryKm || '')}" placeholder="${esc(defKm())}"></label>
+      </div>
+    </section>`;
+  }
+  async function runPlaces(kind, q, nearby) {
+    S.pl = { for: kind, q: q || '', busy: true, results: null, nearby: !!nearby };
+    render(true);
+    try {
+      const pt = dPoint();
+      const res = nearby ? await PL.nearby(pt, Math.max(defKm(), C.num(S.draft && S.draft.deliveryKm)), S.lang) : await PL.search(q, pt, S.lang);
+      if (pt && kind === 'rest') res.sort((a, b) => C.distanceKm(pt, a) - C.distanceKm(pt, b));
+      if (S.pl && S.pl.for === kind) { S.pl.results = res; S.pl.busy = false; }
+    } catch (e) {
+      console.warn(e);
+      S.pl = null;
+      toast(t('mapsErr'), 'warn');
+    }
+    render(true);
+  }
+  if (PL) PL.onAuthFail = () => { S.pl = null; toast(t('mapsErr'), 'warn'); render(true); };
+
   /* ---------- restaurants ---------- */
   function viewRestaurants() {
     const q = S.restQuery.trim().toLowerCase();
     const list = S.restaurants.slice().sort((a, b) => (b.lastOrderedAt || 0) - (a.lastOrderedAt || 0) || a.name.localeCompare(b.name));
     return `<div class="section-head"><h1>${esc(t('navRestaurants'))}</h1><button class="primary small" data-act="newRestaurant">${plusIcon()} ${esc(t('addRestaurant'))}</button></div>
       <p class="muted small-text">${esc(t('restLibHint'))}</p>
+      ${deliveryPanel()}
       ${list.length > 5 ? `<input type="search" id="rest-search2" data-input="restSearch" placeholder="${esc(t('searchRest'))}" value="${esc(S.restQuery)}">` : ''}
       ${list.length ? `<ul class="rest-list">${list.map(r => `<li class="pick-wrap" data-name="${esc(r.name.toLowerCase())}"${q && !r.name.toLowerCase().includes(q) ? ' hidden' : ''}><button class="row-link" data-act="editRestaurant" data-id="${esc(r.id)}">
-        <span><strong>${esc(r.name)}</strong><small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))} · ${esc(t('lastOrdered'))}: ${esc(fmtAgo(r.lastOrderedAt))}</small></span><span class="chev" aria-hidden="true">›</span></button></li>`).join('')}</ul>`
+        <span><strong>${esc(r.name)}</strong><small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))} · ${esc(t('lastOrdered'))}: ${esc(fmtAgo(r.lastOrderedAt))}</small></span><span class="rl-side">${distChip(r)}<span class="chev" aria-hidden="true">›</span></span></button></li>`).join('')}</ul>`
         : `<p class="empty">${esc(t('noRestaurants'))}</p>`}`;
   }
 
@@ -1149,8 +1247,11 @@
         <label class="field"><span>${esc(t('restName'))}</span><input id="r-name" data-draft="name" value="${esc(d.name)}"></label>
         <div class="grid2">
           <label class="field"><span>${esc(t('restPhone'))}</span><input id="r-phone" data-draft="phone" type="tel" dir="ltr" value="${esc(d.phone)}"></label>
+          <label class="field"><span>${esc(t('orderVia'))}</span><select id="r-via" data-draft="orderVia">${['phone', 'whatsapp', 'talabat'].map(v => `<option value="${v}"${(d.orderVia || 'talabat') === v ? ' selected' : ''}>${esc(t('via' + v[0].toUpperCase() + v.slice(1)))}</option>`).join('')}</select></label>
         </div>
+        <label class="field"><span>${esc(t('talabatLink'))}</span><input id="r-talabat" data-draft="talabatUrl" type="url" dir="ltr" value="${esc(d.talabatUrl || '')}" placeholder="https://www.talabat.com/egypt/…"></label>
       </section>
+      ${placePanel(d)}
       <section class="panel form">
         <p class="label">${esc(t('typicalCharges'))}</p>
         <p class="muted small-text">${esc(t('typicalChargesHint'))}</p>
@@ -1314,12 +1415,40 @@
     joinGroup: () => joinPending(),
 
     /* restaurants */
-    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', fees: {}, items: [] }; S.ocr = null; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : 'restaurants' }); },
+    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', fees: {}, items: [] }; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : 'restaurants' }); },
     editRestaurant: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r) return;
-      S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.ocr = null;
+      S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.ocr = null; S.pl = null; S.placeEdit = false;
       loadHistory(r.name, true); loadReceipts(r.name);
       go('restaurant', { from: 'restaurants' });
+    },
+    placeNearby: () => { syncDraft(); if (dPoint()) runPlaces('rest', '', true); },
+    placeEdit: () => { syncDraft(); S.placeEdit = true; S.pl = null; render(true); },
+    placePick: async el => {
+      syncDraft();
+      const p = S.pl && S.pl.results && S.pl.results[+el.dataset.i]; if (!p) return;
+      const d = S.draft;
+      const have = S.restaurants.find(r => r.place && r.place.id === p.id && r.id !== d.id);
+      if (have) return toast(t('placeAlreadyToast', { n: have.name }), 'warn');
+      d.place = { id: p.id, name: p.name, address: p.address, lat: p.lat, lng: p.lng, mapsUrl: p.mapsUrl, verifiedAt: Date.now() };
+      if (!d.name) d.name = p.name;
+      S.pl = null; S.placeEdit = false;
+      toast(/CLOSED/.test(p.status || '') ? t('placeClosed') : t('placePicked'), /CLOSED/.test(p.status || '') ? 'warn' : undefined);
+      render(true);
+      if (!d.phone) { const ph = await PL.phone(p.id, S.lang); if (ph && S.draft === d && !d.phone) { d.phone = ph; render(true); } }
+    },
+    dpEdit: () => { S.dpEdit = true; S.pl = null; render(true); },
+    dpHere: async () => {
+      const label = (($('#dp-label') || {}).value || '').trim();
+      try {
+        const pos = await PL.here();
+        await saveDelivery({ label: label || t('dpLabelPh'), lat: pos.lat, lng: pos.lng, address: '' });
+      } catch (e) { console.warn(e); toast(t('dpGeoErr'), 'warn'); }
+    },
+    dpPick: async el => {
+      const p = S.pl && S.pl.results && S.pl.results[+el.dataset.i]; if (!p) return;
+      const label = (($('#dp-label') || {}).value || '').trim();
+      await saveDelivery({ label: label || p.name, lat: p.lat, lng: p.lng, address: p.address, placeId: p.id });
     },
     draftDelItem: el => { syncDraft(); S.draft.items = S.draft.items.filter(i => i.id !== el.dataset.id); render(true); },
     clearMenu: () => { if (S.confirmKey !== 'clearMenu') { syncDraft(); S.confirmKey = 'clearMenu'; return render(true); } syncDraft(); S.draft.items = []; S.confirmKey = null; render(true); },
@@ -1342,6 +1471,8 @@
       syncDraft();
       const d = S.draft;
       if (!d.name.trim()) return toast(t('errRestName'), 'warn');
+      if (PL.available() && !d.id && !d.place) return toast(t('placeNeed'), 'warn');
+      if (d.deliveryKm !== undefined) { const km = C.round2(C.num(d.deliveryKm)); if (km > 0) d.deliveryKm = km; else delete d.deliveryKm; }
       if (!d.items.length) return toast(t('errNoItems'), 'warn');
       d.items = d.items.map(({ fresh, oldPrice, ...it }) => it);
       delete d.priceSource;
@@ -2396,6 +2527,14 @@
     </main>`;
   }
 
+  async function saveDelivery(pt) {
+    const ok = await guard(S.store.patchGroup(S.gid, { delivery: Object.assign(pt, { at: Date.now() }) }));
+    if (ok === null) return;
+    S.dpEdit = false; S.pl = null; S.dpLabel = null;
+    toast(t('dpSaved'));
+    render(true);
+  }
+
   function syncDraft() {
     if (!S.draft) return;
     document.querySelectorAll('[data-draft]').forEach(inp => { S.draft[inp.dataset.draft] = inp.value.trim(); });
@@ -2471,6 +2610,11 @@
   };
 
   const submits = {
+    placeSearch: form => {
+      const q = form.q.value.trim(); if (!q) return;
+      if (form.dataset.for === 'rest') syncDraft(); else S.dpLabel = (($('#dp-label') || {}).value || '').trim();
+      runPlaces(form.dataset.for, q, false);
+    },
     welcome: async form => {
       const name = form.name.value.trim(), phone = form.phone.value.trim();
       const err = $('#w-err');
@@ -2582,7 +2726,8 @@
         payInfo: { instapay, instapayLink, wallet },
         hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee) || 0, hostFeeLabel: t('hostFeeLabel')
       };
-      const chosen = S.sel.map(id => S.restaurants.find(r => r.id === id)).filter(Boolean);
+      const chosen = S.sel.map(id => S.restaurants.find(r => r.id === id)).filter(r => r && reachOf(r).state !== 'far');
+      if (!chosen.length) return toast(t('needRest'), 'warn');
       if (chosen.length === 1) Object.assign(cart, snapshotOf(chosen[0]), { stage: 'ordering' });
       else {
         cart.stage = 'voting';

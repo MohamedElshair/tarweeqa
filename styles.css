@@ -633,3 +633,23 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .cs-pay .chip-check { flex: none; }
 .cs-amt { flex: none; }
 .cs-amt input { width: 88px !important; min-width: 0; flex: none; margin: 0; }
+
+/* places: delivery point, Google Maps search, distance */
+.rl-side { display: flex; align-items: center; gap: 8px; flex: none; }
+.pick span.chip, .pick-main strong .chip { display: inline-block; font-size: .72rem; margin-inline-start: 6px; vertical-align: middle; }
+.place-search { display: flex; gap: 8px; margin: 8px 0; }
+.place-search input { flex: 1; min-width: 0; }
+.place-results { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.place-row { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; cursor: pointer; color: inherit; font: inherit; }
+.place-row:hover, .place-row:focus-visible { border-color: var(--accent); }
+.pr-main { display: flex; flex-direction: column; min-width: 0; }
+.pr-main small { overflow: hidden; text-overflow: ellipsis; }
+.pr-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.place-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 12px; border: 1.5px solid var(--accent); background: var(--accent-soft); border-radius: var(--r-sm); }
+.place-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.warn-text { color: var(--danger); }
+.dp-now { display: flex; flex-direction: column; margin: 4px 0 0; }
+.far-list { margin-top: 10px; }
+.far-list summary { cursor: pointer; color: var(--muted); }
+.far-list ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.far-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: var(--r-sm); opacity: .75; }

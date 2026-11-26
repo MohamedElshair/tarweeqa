@@ -27,6 +27,12 @@ window.TARWEEQA_CONFIG = {
   //   appId: "1:1234567890:web:abc123"
   // },
 
+  // خرائط جوجل — Google Maps key (Maps JavaScript API + Places API (New)). Empty = the map search is off.
+  // Admins use it to verify a restaurant's place and to find restaurants near the delivery point.
+  googleMapsKey: "",
+  // أقصى مسافة توصيل افتراضية للمطعم (كم) — default delivery range per restaurant, editable per restaurant
+  defaultDeliveryKm: 3,
+
   firebaseSdkVersion: "12.19.0",
   currency: { ar: "ج.م", en: "EGP" },
   defaultCountryCode: "20",
