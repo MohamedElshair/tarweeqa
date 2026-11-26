@@ -1,6 +1,15 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    memberNoOrder: 'مفيش طلب مفتوح دلوقتي. لما المسؤول يفتح طلب هيوصلك اللينك.', roleMember: 'عضو',
+    permsTitle: 'الصلاحيات', permsAdmin: 'يفتحوا الطلبات، يضيفوا ويعدلوا ويمسحوا المطاعم والأسعار، يرفعوا الإيصالات، ويديروا الحسابات.',
+    permsMember: 'يطلبوا من المنيو المبعوتة بس، ويشوفوا طلبهم وحسابهم ويدفعوا. مش بيقدروا يعدلوا أو يمسحوا أي حاجة.',
+    permsOwnerHint: 'إنت صاحب المجموعة: إنت بس اللي تقدر تخلي حد مسؤول أو تشيله.', permsYouAdmin: 'إنت مسؤول في المجموعة دي.', permsYouMember: 'إنت عضو: تقدر تطلب وتدفع.',
+    rcUnknownN: '{n} صنف في الإيصال مش موجود في المنيو: اتسجل في سجل الأسعار بس ومتضافش للمنيو.', rcWrongRestApplied: 'الإيصال باين إنه من «{r}»: الأسعار اتطبقت على الطلب ده بس، والمنيو ما اتغيرش.',
+    receiptOver: 'أصناف عندنا أكتر من اللي في الإيصال', receiptAdjust: 'فرق عن الإيصال', receiptAdjustNote: 'الفرق {d} هيتوزع على الناس بنسبة أكلهم عشان الإجمالي يطابق الإيصال. الأدق إنك تظبط المطابقة فوق.',
+    paidActualLbl: 'اللي اتخصم منك فعلاً (إجمالي طلبات)', paidActualOk: 'مطابق: الناس هتدفع بالظبط {a} اللي اتخصم منك.',
+    paidActualOff: 'الفاتورة {b} لكن اللي اتخصم {a}: فرق {d}.', adjustToPaid: 'وزّع الفرق ({d}) على الناس', adjustedToPaid: 'الحساب اتظبط على المدفوع فعلاً',
+    paidActualHint: 'اكتب الإجمالي اللي اتخصم منك في طلبات عشان نتأكد إن الحساب مظبوط. الإيصال بيكتبه لوحده.',
     tabMyBill: 'حسابي', reopenShort: 'افتحه تاني', orderedReopenHint: 'حد نسي يطلب؟ تقدر تفتح الطلب تاني.', reopened: 'الطلب اتفتح تاني ربع ساعة', openingOrder: 'بنفتحلك الطلب…',
     markOrdered1: 'اتطلب', checkedN: 'علّمت {d} من {n}', checkedAll: 'كله اتطلب ✓', clearChecks: 'امسح العلامات',
     instapayAny: 'InstaPay (العنوان أو الرابط، أو الصق رسالة إنستاباي كلها)', payInsta: 'ادفع {a} بإنستاباي', payInstaNote: 'هيفتح إنستاباي على الحساب على طول، اكتب المبلغ {a}.',
@@ -185,6 +194,15 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    memberNoOrder: 'No open order right now. When an admin starts one you will get the link.', roleMember: 'Member',
+    permsTitle: 'Permissions', permsAdmin: 'Start orders, add, edit and delete restaurants and prices, upload receipts, manage the money.',
+    permsMember: 'Order from the menu they are sent, see their own order and bill, and pay. They cannot edit or delete anything.',
+    permsOwnerHint: 'You own the group: only you can make someone an admin or remove them.', permsYouAdmin: 'You are an admin in this group.', permsYouMember: 'You are a member: you can order and pay.',
+    rcUnknownN: '{n} receipt items are not on the menu: kept in the price history only, not added to the menu.', rcWrongRestApplied: 'The receipt looks like it is from "{r}": prices applied to this order only; the menu was not changed.',
+    receiptOver: 'We have more of these than the receipt', receiptAdjust: 'Difference from receipt', receiptAdjustNote: 'The difference {d} will be shared by food share so the total matches the receipt. Fixing the matching above is more exact.',
+    paidActualLbl: 'What you actually paid (Talabat total)', paidActualOk: 'Matches: people pay exactly the {a} you paid.',
+    paidActualOff: 'The bill is {b} but you paid {a}: difference {d}.', adjustToPaid: 'Share the difference ({d})', adjustedToPaid: 'Bill adjusted to what was paid',
+    paidActualHint: 'Type the total Talabat charged you so we can check the bill. A receipt fills it in.',
     tabMyBill: 'My bill', reopenShort: 'Reopen', orderedReopenHint: 'Someone forgot to order? You can reopen it.', reopened: 'Order reopened for 15 minutes', openingOrder: 'Opening the order…',
     markOrdered1: 'Ordered', checkedN: 'Ticked {d} of {n}', checkedAll: 'All ordered ✓', clearChecks: 'Clear ticks',
     instapayAny: 'InstaPay (handle or link, or paste the whole InstaPay message)', payInsta: 'Pay {a} with InstaPay', payInstaNote: 'Opens InstaPay on the account directly; enter {a}.',

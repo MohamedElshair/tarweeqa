@@ -283,3 +283,8 @@ create or replace function tq_name_key(p text) returns text language sql immutab
 --   tq_receipts_list(token, gid, rest_name), tq_receipt_get(token, gid, id)
 --   tq_learn: prices are dated by the item ("at"); an older-dated price never replaces a newer one.
 -- ---------------------------------------------------------------------------
+
+-- Permissions (migration admin_only_permissions, 2026-11-26)
+--   Admin only: tq_save_restaurant, tq_patch_restaurant, tq_delete_restaurant, tq_create_cart, tq_save_receipt, tq_patch_group.
+--   Owner only: changing adminIds / memberUids / ownerId. tq_join_group keeps only name/phone/joinedAt in the roster entry.
+--   Members: join by link, set their own order while it is open, vote, report their payment.

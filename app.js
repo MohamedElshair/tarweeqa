@@ -69,6 +69,8 @@
   const isActive = c => ['voting', 'ordering', 'closed'].includes(stageOf(c));
   const isHost = c => c && (c.ownerId === me() || isAdmin());
   const isAdmin = () => !!(S.group && (S.group.adminIds || []).includes(me()));
+  const isOwner = () => !!(S.group && S.group.ownerId === me());
+  const ADMIN_ROUTES = ['newOrder', 'restaurants', 'restaurant'];   // members only order: these screens are for admins
   const cartById = id => S.carts.find(c => c.id === id) || null;
 
   /* everyone in the group, plus anyone who joined this order */
@@ -178,6 +180,7 @@
     if (!S.booted) return `<div class="boot">${esc(t('appName'))}</div>`;
     if (!S.profile || !S.profile.name) return viewWelcome();
     if (!S.gid || !S.group) return viewStart();
+    if (ADMIN_ROUTES.includes(S.route.name) && !isAdmin()) S.route = { name: 'home' };
     const r = S.route.name;
     const body = ({
       home: viewHome, newOrder: viewNewOrder, cart: viewCart, restaurants: viewRestaurants,
@@ -210,7 +213,7 @@
       <main class="page">${body}</main>
       <nav class="bottom-nav">
         ${tab('home', icoHome(), t('navHome'))}
-        ${tab('restaurants', icoMenu(), t('navRestaurants'))}
+        ${isAdmin() ? tab('restaurants', icoMenu(), t('navRestaurants')) : ''}
         ${tab('money', icoCoins(), t('navMoney'), pend ? `<i class="badge tnum">${pend}</i>` : '')}
         ${tab('group', icoPeople(), t('navGroup'))}
       </nav>`;
@@ -292,7 +295,8 @@
       </section>
       ${collectNag()}
       ${active.length ? `<section class="stack">${active.map(activeCard).join('')}</section>` : ''}
-      <button class="${active.length ? 'secondary' : 'primary'} block big" data-act="nav" data-to="newOrder">${plusIcon()} ${esc(active.length ? t('anotherOrder') : t('newOrder'))}</button>
+      ${isAdmin() ? `<button class="${active.length ? 'secondary' : 'primary'} block big" data-act="nav" data-to="newOrder">${plusIcon()} ${esc(active.length ? t('anotherOrder') : t('newOrder'))}</button>`
+        : (active.length ? '' : `<p class="empty">${esc(t('memberNoOrder'))}</p>`)}
       ${moneySummary()}
       <section>
         <div class="section-head"><h2>${esc(t('recentOrders'))}</h2></div>
@@ -647,6 +651,19 @@
   }
 
   /* ---------- shared items: one plate or bottle split between chosen people ---------- */
+  // the safety net: what Talabat actually took vs what the bill adds up to
+  function paidCheck(c, bill) {
+    const actual = C.num(c.receiptTotal);
+    const diff = actual > 0 ? C.round2(actual - bill.grand) : 0;
+    const ok = actual > 0 && Math.abs(diff) < 0.05;
+    return `<section class="panel paid-check ${actual > 0 ? (ok ? 'ok' : 'warn') : ''}">
+      <label class="field inline-field"><span>${esc(t('paidActualLbl'))}</span><input id="paid-actual" class="tnum" inputmode="decimal" data-change="paidActual" value="${actual > 0 ? esc(C.fmtMoney(actual)) : ''}" placeholder="0"></label>
+      ${actual > 0 ? (ok ? `<p class="small-text pc-ok">✓ ${esc(t('paidActualOk', { a: money(actual) }))}</p>`
+        : `<p class="small-text pc-warn">⚠ ${esc(t('paidActualOff', { b: money(bill.grand), a: money(actual), d: (diff > 0 ? '+' : '−') + C.fmtMoney(Math.abs(diff)) }))}</p>
+           <button class="primary block" data-act="adjustToPaid">${esc(t('adjustToPaid', { d: (diff > 0 ? '+' : '−') + C.fmtMoney(Math.abs(diff)) }))}</button>`)
+        : `<p class="muted small-text">${esc(t('paidActualHint'))}</p>`}
+    </section>`;
+  }
   function mySharedLines(c, key) {
     const mine = (c.shared || []).filter(x => (x.keys || []).includes(key));
     if (!mine.length) return '';
@@ -942,7 +959,8 @@
         <div><span>${esc(t('collected'))}</span><strong>${esc(money(bill.collected))}</strong>${bill.extra > 0 ? `<small class="muted">${esc(t('roundExtra'))} +${esc(C.fmtMoney(bill.extra))}</small>` : ''}</div>
         ${placed && host ? `<div class="paid-bar"><span>${esc(t('paidProgress', { a: C.fmtMoney(bill.paidSum), b: C.fmtMoney(bill.collected) }))}</span>
           <span class="bar"><i style="width:${bill.collected ? Math.min(100, Math.round(bill.paidSum / bill.collected * 100)) : 0}%"></i></span></div>` : ''}
-      </section>`;
+      </section>
+      ${host && (placed || st === 'closed') ? paidCheck(c, bill) : ''}`;
     const visible = host ? bill.rows : bill.rows.filter(r => r.key === me());
     const myRow = bill.rows.find(r => r.key === me());
     const payBox = (pi.instapay || pi.wallet || pi.instapayLink || host) ? `<section class="panel pay">
@@ -1066,14 +1084,22 @@
         </div>
         <small class="muted">${esc(t('inviteHint'))}</small>
       </section>
+      <section class="panel perms">
+        <p class="label">🔐 ${esc(t('permsTitle'))}</p>
+        <ul class="perm-list">
+          <li><b>${esc(t('roleOwner'))} / ${esc(t('roleAdmin'))}</b><span>${esc(t('permsAdmin'))}</span></li>
+          <li><b>${esc(t('roleMember'))}</b><span>${esc(t('permsMember'))}</span></li>
+        </ul>
+        <p class="muted small-text">${esc(isOwner() ? t('permsOwnerHint') : isAdmin() ? t('permsYouAdmin') : t('permsYouMember'))}</p>
+      </section>
       <section>
         <div class="section-head"><h2>${esc(t('membersN', { n: keys.length }))}</h2></div>
         <ul class="people">${keys.map(k => `<li class="person">
           <span class="avatar sm${ppl[k].guest ? ' ghosted' : ''}">${esc(initial(ppl[k].name))}</span>
-          <span class="p-main"><strong>${esc(ppl[k].name)}${k === me() ? ` <small class="muted">(${esc(t('you'))})</small>` : ''}</strong><small class="muted tnum" dir="ltr">${esc(ppl[k].phone || '')}</small></span>
+          <span class="p-main"><strong>${esc(ppl[k].name)}${k === me() ? ` <small class="muted">(${esc(t('you'))})</small>` : ''}</strong>${isAdmin() ? `<small class="muted tnum" dir="ltr">${esc(ppl[k].phone || '')}</small>` : ''}</span>
           <span class="p-side">${k === g.ownerId ? `<span class="chip chip-ordered">${esc(t('roleOwner'))}</span>` : (g.adminIds || []).includes(k) ? `<span class="chip chip-open">${esc(t('roleAdmin'))}</span>` : ''}${ppl[k].guest ? `<span class="chip chip-out">${esc(t('guest'))}</span>` : ''}
           ${isAdmin() && ppl[k].guest ? `<button class="icon-btn" data-act="delGuest" data-key="${esc(k)}" aria-label="${esc(t('delete'))}">×</button>` : ''}
-          ${isAdmin() && !ppl[k].guest && k !== g.ownerId && k !== me() ? `<button class="ghost small" data-act="toggleAdmin" data-key="${esc(k)}">${esc((g.adminIds || []).includes(k) ? t('removeAdmin') : t('makeAdmin'))}</button>` : ''}</span>
+          ${isOwner() && !ppl[k].guest && k !== g.ownerId && k !== me() ? `<button class="ghost small" data-act="toggleAdmin" data-key="${esc(k)}">${esc((g.adminIds || []).includes(k) ? t('removeAdmin') : t('makeAdmin'))}</button>` : ''}</span>
         </li>`).join('')}</ul>
       </section>
       ${isAdmin() ? `<form class="panel form" data-submit="addGuest" novalidate>
@@ -1471,6 +1497,14 @@
     copyInvoiceLink: el => copyText(el.dataset.text),
     openTalabat: () => openTalabatApp(),
     viewReceipt: el => openReceipt(el.dataset.id),
+    adjustToPaid: () => {
+      const c = curCart(); const actual = C.num(c.receiptTotal); if (!(actual > 0)) return;
+      const charges = (c.charges || []).filter(ch => !ch.adjust);
+      const grand = C.computeBill(Object.assign({}, c, { charges }), {}).grand;
+      const gap = C.round2(actual - grand);
+      if (Math.abs(gap) >= 0.05) charges.push({ id: rid(6), kind: gap < 0 ? 'discount' : 'other', label: t('receiptAdjust'), amount: Math.abs(gap), split: 'share', adjust: true });
+      patch(c, { charges }); toast(t('adjustedToPaid'));
+    },
     clearChecks: () => { const c = curCart(); c.checked = {}; render(true); patch(c, { checked: {} }); },
     delShared: el => { const c = curCart(); patch(c, { shared: (c.shared || []).filter(x => x.id !== el.dataset.id) }); },
     shAll: () => document.querySelectorAll('.sh-people input').forEach(i => { i.checked = true; }),
@@ -1674,7 +1708,7 @@
           const k = C.normName(it.name) + '|' + it.price;
           if (have.has(k)) continue;
           have.add(k);
-          const ex = S.draft.items.find(x => C.sameItem(x.name, it.name));
+          const ex = findItem(S.draft.items, it.name);
           if (ex) { if (C.num(ex.price) !== it.price && at >= priceAt(S.draft.name, ex)) { ex.oldPrice = ex.oldPrice || ex.price; ex.price = it.price; ex.at = at; ex.fresh = true; added++; } continue; }
           S.draft.items.push({ id: rid(8), name: it.name, price: it.price, category: it.category, fresh: true, at });
           added++;
@@ -1703,24 +1737,48 @@
 
   /* ---------- receipt for an order: real names and prices, real charges ---------- */
   function lineKey(it) { return it.name.trim() + '|' + C.num(it.price) + '|' + (it.note || '').trim(); }
+  // match our order lines to receipt lines. A receipt line can cover several of our lines up to its quantity
+  // (e.g. "4× فول جاد" covers 2× فول جاد + 2× فول بالحمص when the host ordered the nearest thing).
   function autoMatch(c, rc) {
     const agg = C.aggregate(c).lines;
     const map = {};
-    const used = new Set();
-    // best name match first; exact price helps break ties
-    const pairs = [];
-    agg.forEach(l => rc.items.forEach((it, j) => {
+    const cap = rc.items.map(it => Math.max(1, C.num(it.qty) || 1));
+    const key = l => l.name.trim() + '|' + C.num(l.price) + '|' + l.note;
+    const score = (l, it) => {
       let sc = C.similarity(l.name, it.name);
-      if (Math.abs(C.num(l.price) - it.unit) < 0.01) sc += 0.15;
+      if (sameName(l.name, it.name)) sc += 0.3;
+      if (it.unit != null && Math.abs(C.num(l.price) - it.unit) < 0.01) sc += 0.15;
       if (l.qty === it.qty) sc += 0.1;
-      pairs.push({ k: l.name.trim() + '|' + C.num(l.price) + '|' + l.note, j, sc });
-    }));
+      return sc;
+    };
+    const pairs = [];
+    agg.forEach(l => rc.items.forEach((it, j) => pairs.push({ l, k: key(l), j, sc: score(l, it) })));
     pairs.sort((a, b) => b.sc - a.sc);
+    // 1) clear name matches, while the receipt line still has quantity left
     for (const p of pairs) {
-      if (p.sc < 0.4 || p.k in map || used.has(p.j)) continue;
-      map[p.k] = p.j; used.add(p.j);
+      if (p.sc < 0.4 || p.k in map || cap[p.j] < p.l.qty) continue;
+      map[p.k] = p.j; cap[p.j] -= p.l.qty;
+    }
+    // 2) what is left: the closest receipt line that still has room for it
+    for (const p of pairs) {
+      if (p.k in map || cap[p.j] < p.l.qty) continue;
+      map[p.k] = p.j; cap[p.j] -= p.l.qty;
     }
     return map;
+  }
+  // how much of the receipt our matched lines use, and what the food comes to after matching
+  function matchState(c, rc, map) {
+    const agg = C.aggregate(c).lines;
+    const used = rc.items.map(() => 0);
+    let after = 0;
+    for (const l of agg) {
+      const j = map[l.name.trim() + '|' + C.num(l.price) + '|' + l.note];
+      const ok = j != null && j >= 0 && rc.items[j] && rc.items[j].unit != null;
+      if (ok) used[j] += l.qty;
+      after += l.qty * (ok ? rc.items[j].unit : C.num(l.price));
+    }
+    const sub = rc.subtotal != null ? rc.subtotal : rc.itemsSum;
+    return { used, after: C.round2(after), sub, diff: C.round2(sub - after) };
   }
   async function readReceipt(files) {
     const c = curCart();
@@ -1769,10 +1827,11 @@
     const agg = C.aggregate(c).lines;
     const opts = sel => `<option value="-1"${sel === -1 ? ' selected' : ''}>${esc(t('receiptNoMatch'))}</option>` +
       rc.items.map((it, j) => `<option value="${j}"${sel === j ? ' selected' : ''}>${esc((it.unsure ? '⚠ ' : '') + it.qty + '× ' + it.name + ' — ' + (it.unit == null ? '?' : C.fmtMoney(it.unit)))}</option>`).join('');
-    const usedJ = new Set(Object.values(R.map));
-    const after = C.round2(agg.reduce((s, l) => { const j = R.map[l.name.trim() + '|' + C.num(l.price) + '|' + l.note]; return s + l.qty * (j != null && j >= 0 && rc.items[j].unit != null ? rc.items[j].unit : C.num(l.price)); }, 0));
-    const sub = rc.subtotal != null ? rc.subtotal : rc.itemsSum;
-    const okSum = Math.abs(after - sub) < 0.06;
+    const ms = matchState(c, rc, R.map);
+    const after = ms.after, sub = ms.sub;
+    const okSum = Math.abs(ms.diff) < 0.06;
+    const leftover = rc.items.map((it, j) => ({ it, n: Math.max(0, (C.num(it.qty) || 1) - ms.used[j]) })).filter(x => x.n > 0);
+    const over = rc.items.map((it, j) => ({ it, n: ms.used[j] - (C.num(it.qty) || 1) })).filter(x => x.n > 0);
     const nameOff = rc.restaurant && C.similarity(rc.restaurant, c.restaurant.name) < 0.34;
     return head + `
       ${rc.restaurant || rc.date ? `<p class="small-text${nameOff ? ' rc-warn' : ' muted'}">${esc(t('receiptFrom', { r: rc.restaurant || '—', d: rc.date || '—' }))}${nameOff ? ' ' + esc(t('receiptOtherRest')) : ''}</p>` : ''}
@@ -1791,9 +1850,11 @@
         </li>`;
       }).join('')}</ul>
       ${rc.items.some(i => i.unsure) ? `<p class="small-text rc-warn">${esc(t('receiptUnsureLines', { s: rc.items.filter(i => i.unsure).map(i => i.name).join(comma()) }))}</p>` : ''}
-      ${rc.items.some((_, j) => !usedJ.has(j)) ? `<p class="muted small-text">${esc(t('receiptExtra'))}: ${esc(rc.items.filter((_, j) => !usedJ.has(j)).map(i => i.qty + '× ' + i.name).join(comma()))}</p>` : ''}
+      ${leftover.length ? `<p class="small-text rc-warn">${esc(t('receiptExtra'))}: ${esc(leftover.map(x => x.n + '× ' + x.it.name).join(comma()))}</p>` : ''}
+      ${over.length ? `<p class="small-text rc-warn">${esc(t('receiptOver'))}: ${esc(over.map(x => x.it.name + ' +' + x.n).join(comma()))}</p>` : ''}
       ${rc.fees.length ? `<p class="label">${esc(t('receiptFees'))}</p><div class="rc-fees">${rc.fees.map((f, i) => `<label class="check"><input type="checkbox" data-change="rcFee" data-i="${i}" ${R.fees[i] ? 'checked' : ''}><span>${esc(f.label || t('kind_' + f.kind))}: <b class="tnum">${f.kind === 'discount' ? '−' : ''}${esc(money(f.amount))}</b></span></label>`).join('')}</div>` : ''}
       <p class="rc-check ${okSum ? 'ok' : 'warn'} tnum">${esc(okSum ? t('receiptMatchesOk', { a: money(after) }) : t('receiptMatchesOff', { a: money(after), b: money(sub) }))}</p>
+      ${okSum ? '' : `<p class="small-text rc-warn">${esc(t('receiptAdjustNote', { d: (ms.diff > 0 ? '+' : '−') + C.fmtMoney(Math.abs(ms.diff)) }))}</p>`}
       <button class="primary block" data-act="applyReceipt">${esc(t('receiptApply'))}</button>
       <p class="muted small-text">${esc(t('receiptApplyHint'))}</p>
     </section>`;
@@ -1803,26 +1864,43 @@
     if (!c || !R || !R.data) return;
     const rc = R.data;
     const members = clone(c.members || {});
+    const pairs = [];   // [name people see, receipt line] for every confirmed match
     for (const k of Object.keys(members)) {
       for (const it of members[k].items || []) {
         const j = R.map[lineKey(it)];
         if (j == null || j < 0) continue;
         const r = rc.items[j];
         if (r.unit == null) continue;
-        if (it.name !== r.name) it.askedFor = it.askedFor || it.name;
-        it.name = r.name; it.price = r.unit; it.noPrice = false;
+        // the name people chose stays; only the price follows the receipt. The receipt's wording is kept internally.
+        it.price = r.unit; it.noPrice = false;
+        if (C.normName(r.name) !== C.normName(it.name)) it.receiptName = r.name;
+        pairs.push([it.name, r]);
       }
     }
+    const shared = clone(c.shared || []);
+    for (const x of shared) {
+      const j = R.map[x.name.trim() + '|' + C.num(x.price) + '|'];
+      if (j == null || j < 0 || rc.items[j].unit == null) continue;
+      x.price = rc.items[j].unit;
+      if (C.normName(rc.items[j].name) !== C.normName(x.name)) x.receiptName = rc.items[j].name;
+      pairs.push([x.name, rc.items[j]]);
+    }
     const kinds = new Set(rc.fees.filter((f, i) => R.fees[i]).map(f => f.kind));
-    const kept = (c.charges || []).filter(ch => !kinds.has(ch.kind) || ch.kind === 'tip' || ch.kind === 'shortage');
+    const kept = (c.charges || []).filter(ch => !ch.adjust && (!kinds.has(ch.kind) || ch.kind === 'tip' || ch.kind === 'shortage'));
     const fromReceipt = rc.fees.filter((f, i) => R.fees[i] && f.amount > 0).map(f => ({ id: rid(6), kind: f.kind, label: f.label || t('kind_' + f.kind), amount: f.amount, split: C.DEFAULT_SPLIT[f.kind] || 'equal' }));
-    await patch(c, { members, charges: [...fromReceipt, ...kept], receiptAt: Date.now(), receiptNo: rc.orderNo || '', receiptDate: rc.date || '' });
+    // the money must add up to what was actually paid: any gap left after matching is shared by food share
+    const food = C.round2(C.aggregate(Object.assign({}, c, { members, shared })).lines.reduce((a, l) => a + l.qty * C.num(l.price), 0));
+    const sub = rc.subtotal != null ? rc.subtotal : rc.itemsSum;
+    const gap = sub != null ? C.round2(sub - food) : 0;
+    if (Math.abs(gap) >= 0.05) fromReceipt.push({ id: rid(6), kind: gap < 0 ? 'discount' : 'other', label: t('receiptAdjust'), amount: Math.abs(gap), split: 'share', adjust: true });
+    await patch(c, { members, shared, charges: [...fromReceipt, ...kept], receiptAt: Date.now(), receiptNo: rc.orderNo || '', receiptDate: rc.date || '', receiptTotal: rc.total != null ? rc.total : null });
     // teach the restaurant: real prices, new items, usual charges
     const r = S.restaurants.find(x => x.id === c.restaurantId);
-    if (r) {
+    const wrongRest = r && rc.restaurant && C.similarity(rc.restaurant, r.name) < 0.34;
+    if (r && !wrongRest) {
       await loadHistory(r.name, true);
       const items = clone(r.items || []);
-      const res = takeNewest(items, rc, r.name, t('fromReceipts'));
+      const res = learnFromReceipt(items, rc, pairs, r.name);
       items.forEach(i => { delete i.fresh; delete i.oldPrice; });
       const fees = Object.assign({}, r.fees || {});
       const p = { items, lastOrderedAt: Date.now(), priceSource: null };
@@ -1834,9 +1912,10 @@
       await guard(S.store.patchRestaurant(S.gid, r.id, p));
       loadHistory(r.name, true); loadReceipts(r.name);
       if (res.older) toast(t('rcOlderN', { n: res.older }));
+      if (res.unknown) toast(t('rcUnknownN', { n: res.unknown }));
     }
     S.rcpt = null;
-    toast(t('receiptDone'));
+    toast(wrongRest ? t('rcWrongRestApplied', { r: rc.restaurant }) : t('receiptDone'));
   }
 
   /* ---------- collecting the money: who still owes on my orders ---------- */
@@ -1894,8 +1973,44 @@
   // the date the item's current price comes from
   function priceAt(restName, it) {
     let at = it.at || 0;
-    for (const r of S.history[restName] || []) if (r.at && r.at > at && C.sameItem(r.item, it.name) && Math.abs(C.num(r.price) - C.num(it.price)) < 0.005) at = r.at;
+    for (const r of S.history[restName] || []) if (r.at && r.at > at && namesOf(it).some(n => C.sameItem(r.item, n)) && Math.abs(C.num(r.price) - C.num(it.price)) < 0.005) at = r.at;
     return at;
+  }
+  // item names: the menu name people see, plus the receipt wordings learned for it (aliases)
+  const loose = n => C.normName(n).replace(/^(سندو?تش|ساندو?يتش|سندويتش|ساندوتش)\s*/, '').replace(/\s+/g, '').replace(/^ال/, '').replace(/بال/g, 'ب').replace(/أ|إ|آ/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/و?اوم?ليت|امليت|اومليت/g, 'امليت');
+  const sameName = (a, b) => C.sameItem(a, b) || loose(a) === loose(b) || C.similarity(loose(a), loose(b)) >= 0.86;
+  const namesOf = it => [it.name, ...(it.aliases || [])];
+  const itemIs = (it, name) => namesOf(it).some(n => sameName(n, name));
+  function findItem(items, name) { return items.find(x => itemIs(x, name)); }
+  function addAlias(it, name) {
+    if (!name || C.normName(name) === C.normName(it.name)) return;
+    it.aliases = Array.from(new Set([...(it.aliases || []), name])).slice(-8);
+  }
+  // all the names an item went by in this restaurant (for its price history)
+  function aliasesOf(restName, name) {
+    const lists = [S.draft && S.draft.name === restName ? S.draft.items : null, (S.restaurants.find(r => r.name === restName) || {}).items].filter(Boolean);
+    for (const items of lists) { const it = items.find(x => C.sameItem(x.name, name)); if (it) return namesOf(it); }
+    return [name];
+  }
+  const histIs = (restName, rowItem, name) => aliasesOf(restName, name).some(n => C.sameItem(rowItem, n));
+  // the order's receipt teaches the menu: confirmed matches update the matched menu item's price (name unchanged);
+  // receipt lines that match nothing on the menu are NOT added — they stay in the price history only
+  function learnFromReceipt(items, rc, pairs, restName) {
+    const at = rcAt(rc);
+    let updated = 0, older = 0, unknown = 0;
+    const done = new Set();
+    const touch = (ex, line) => {
+      if (done.has(ex)) return;
+      done.add(ex); addAlias(ex, line.name);
+      if (at >= priceAt(restName, ex)) { if (C.num(ex.price) !== line.unit) { ex.price = line.unit; updated++; } ex.at = at; } else older++;
+    };
+    for (const [shown, line] of pairs) { const ex = findItem(items, shown) || findItem(items, line.name); if (ex && rcUsable(line)) touch(ex, line); }
+    for (const line of rc.items) {
+      if (!rcUsable(line) || pairs.some(p => p[1] === line)) continue;
+      const ex = findItem(items, line.name);
+      if (ex) touch(ex, line); else unknown++;
+    }
+    return { updated, older, unknown };
   }
   // apply one receipt to a menu: newer-or-same date replaces the price, an older one only goes to the history
   function takeNewest(items, rc, restName, category) {
@@ -1903,7 +2018,8 @@
     let updated = 0, added = 0, older = 0, unsure = 0;
     for (const it of rc.items) {
       if (!rcUsable(it)) { unsure++; continue; }
-      const ex = items.find(x => C.sameItem(x.name, it.name));
+      const ex = findItem(items, it.name);
+      if (ex) addAlias(ex, it.name);
       if (!ex) { items.push({ id: rid(8), name: it.name, price: it.unit, category: category || '', fresh: true, at }); added++; continue; }
       if (at >= priceAt(restName, ex)) {
         if (C.num(ex.price) !== it.unit) { ex.oldPrice = ex.oldPrice || ex.price; ex.price = it.unit; ex.fresh = true; updated++; }
@@ -1964,10 +2080,10 @@
     const day = ms => { const x = new Date(ms); x.setHours(0, 0, 0, 0); return x.getTime(); };
     const dates = Array.from(new Set(rows.map(r => day(r.at)))).sort((a, b) => b - a).slice(0, 5);
     if (dates.length < 2) return '';
-    const items = d.items.filter(it => rows.some(r => C.sameItem(r.item, it.name)));
+    const items = d.items.filter(it => rows.some(r => namesOf(it).some(n => C.sameItem(r.item, n))));
     if (!items.length) return '';
     // one column per day; several receipts on one day → the last one counts
-    const cell = (it, dd) => { let best = null; for (const x of rows) if (day(x.at) === dd && C.sameItem(x.item, it.name) && (!best || x.at >= best.at)) best = x; return best ? C.num(best.price) : null; };
+    const cell = (it, dd) => { let best = null; for (const x of rows) if (day(x.at) === dd && namesOf(it).some(n => C.sameItem(x.item, n)) && (!best || x.at >= best.at)) best = x; return best ? C.num(best.price) : null; };
     return `<details class="panel cmp"><summary>${esc(t('priceCompare'))} <small class="muted">${esc(t('priceCompareSub', { n: dates.length }))}</small></summary>
       <div class="cmp-wrap"><table class="cmp-table tnum"><thead><tr><th>${esc(t('itemName'))}</th>${dates.map(a => `<th>${esc(dayFmt(a))}</th>`).join('')}</tr></thead>
       <tbody>${items.map(it => {
@@ -1993,7 +2109,7 @@
   }
   // the price before the current one, from the restaurant's history
   function priceMove(restName, itemName, price) {
-    const rows = (S.history[restName] || []).filter(r => C.sameItem(r.item, itemName));
+    const rows = (S.history[restName] || []).filter(r => histIs(restName, r.item, itemName));
     if (!rows.length) return null;
     const same = r => Math.abs(C.num(r.price) - price) < 0.005;
     let idx = -1;
@@ -2245,6 +2361,7 @@
     },
     chPerson: el => { const c = curCart(); const list = clone(c.charges); list[+el.dataset.i].person = el.value; patch(c, { charges: list }); },
     roundUp: el => patch(curCart(), { roundUp: el.checked }),
+    paidActual: el => { const v = C.round2(C.num(el.value)); patch(curCart(), { receiptTotal: v > 0 ? v : null }); },
     checkLine: el => { const c = curCart(); c.checked = Object.assign({}, c.checked, { [el.dataset.id]: el.checked || undefined }); render(true); patch(c, { ['checked.' + el.dataset.id]: el.checked ? true : null }); },
     sharedName: el => { const c = curCart(); const it = (c.menu || []).find(i => C.sameItem(i.name, el.value)); const pr = $('#sh-price'); if (it && pr && !pr.value) pr.value = it.price; },
     hostExempt: el => { patch(curCart(), { hostExempt: el.checked }); if (S.profile.hostAuto) saveHostDefaults({ hostExempt: el.checked }); },
