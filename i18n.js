@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    markOrdered1: 'اتطلب', checkedN: 'علّمت {d} من {n}', checkedAll: 'كله اتطلب ✓', clearChecks: 'امسح العلامات',
     instapayAny: 'InstaPay (العنوان أو الرابط، أو الصق رسالة إنستاباي كلها)', payInsta: 'ادفع {a} بإنستاباي', payInstaNote: 'هيفتح إنستاباي على الحساب على طول، اكتب المبلغ {a}.',
     copyAmount: 'انسخ المبلغ', msgPayLink: 'ادفع بإنستاباي على طول: {link}', instaLinkOk: 'رابط الدفع اتحفظ ({h}): هيظهر للناس زرار «ادفع بإنستاباي».',
     noOneElse: 'مفيش حد غيرك في الطلب ده، فمفيش فواتير تتبعت. ضيف الناس من تبويب «الناس» (ضيف حد للطلب)، أو ابعتلهم لينك الطلب يدخلوا يطلبوا.',
@@ -183,6 +184,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    markOrdered1: 'Ordered', checkedN: 'Ticked {d} of {n}', checkedAll: 'All ordered ✓', clearChecks: 'Clear ticks',
     instapayAny: 'InstaPay (handle or link, or paste the whole InstaPay message)', payInsta: 'Pay {a} with InstaPay', payInstaNote: 'Opens InstaPay on the account directly; enter {a}.',
     copyAmount: 'Copy amount', msgPayLink: 'Pay with InstaPay directly: {link}', instaLinkOk: 'Payment link saved ({h}): people get a "Pay with InstaPay" button.',
     noOneElse: 'Nobody else is in this order, so there are no invoices to send. Add people from the People tab (Add someone), or send them the order link to order themselves.',

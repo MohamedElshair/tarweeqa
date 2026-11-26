@@ -579,3 +579,19 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .insta-btn:active { transform: translateY(1px); }
 .insta-note { margin: 0 0 8px; }
 .send-to { margin: 4px 0 8px; }
+
+/* order checklist + what each person ordered */
+.agg li .chk { display: flex; align-items: center; padding-inline-end: 4px; }
+.agg li .chk input { width: 24px; height: 24px; accent-color: #1b6b45; margin: 0; cursor: pointer; }
+.agg li.done .n, .agg li.done .q, .agg li.done .p { opacity: .45; text-decoration: line-through; }
+.chk-prog { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; font-size: 14px; font-weight: 600; }
+.chk-prog .bar { flex: 1; height: 6px; background: #e6ebe7; border-radius: 99px; overflow: hidden; }
+.chk-prog .bar i { display: block; height: 100%; background: #1b6b45; transition: width .2s; }
+.chk-prog.all { color: #157f3d; }
+.p-items { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; font-size: 13.5px; }
+.p-items li { display: flex; justify-content: space-between; gap: 8px; border-top: 1px dashed #e6ebe7; padding-top: 3px; }
+.p-items em { color: #7a8580; font-style: normal; }
+.agg li { grid-template-columns: auto auto 1fr auto; }
+.person:has(.p-items) { align-items: flex-start; }
+.person:has(.p-items) { flex-wrap: wrap; align-items: center; }
+.person .p-items { flex-basis: 100%; margin-inline-start: 48px; }

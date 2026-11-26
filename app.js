@@ -718,8 +718,10 @@
     const keys = Object.keys(ppl).sort((a, b) => order[personStatus(c, a)] - order[personStatus(c, b)] || ppl[a].name.localeCompare(ppl[b].name));
     const by = s => keys.filter(k => personStatus(c, k) === s);
     const open = st === 'ordering';
+    const exp = C.withShared(c).members || {};
     const rows = keys.map(k => {
       const p = ppl[k], s = personStatus(c, k), m = (c.members || {})[k];
+      const its = (exp[k] && exp[k].items) || [];
       const cnt = m ? (m.items || []).reduce((a, it) => a + C.num(it.qty), 0) : 0;
       let actions = '';
       if (host && open && k !== me() && (s === 'none' || s === 'picking') && p.phone) {
@@ -729,8 +731,10 @@
       return `<li class="person state-${s}">
         <span class="avatar sm${s === 'none' ? ' ghosted' : ''}">${esc(initial(p.name))}</span>
         <span class="p-main"><strong>${esc(p.name)}${k === me() ? ` <small class="muted">(${esc(t('you'))})</small>` : ''}${k === c.ownerId ? ` <small class="muted">· ${esc(t('host'))}</small>` : ''}${p.guest ? ` <small class="muted">· ${esc(t('guest'))}</small>` : ''}</strong>
-          <small class="muted tnum">${cnt ? cnt + ' · ' + esc(money(C.memberSubtotal(m))) : '—'}</small></span>
+          <small class="muted tnum">${cnt ? cnt + ' · ' + esc(money(C.memberSubtotal(exp[k] || m))) : '—'}</small>
+</span>
         <span class="p-side">${personChip(s)}${actions}</span>
+          ${its.length ? `<ul class="p-items">${its.map(it => `<li><span>${it.shared ? '🤝 ' : ''}${C.num(it.qty) > 1 || !it.shared ? `<b class="tnum">${esc(String(it.qty))}×</b> ` : ''}${esc(it.name)}${it.note ? ` <em>(${esc(it.note)})</em>` : ''}${it.shared ? ` <small class="muted">÷${it.sharedN}</small>` : ''}</span><span class="tnum">${it.price ? esc(C.fmtMoney(C.round2(C.num(it.price) * C.num(it.qty)))) : '?'}</span></li>`).join('')}</ul>` : ''}
       </li>`;
     }).join('');
 
@@ -775,6 +779,12 @@
     lines.push('—————', `${t('pieces')}: ${agg.pieces}`, `${t('foodTotal')}: ${money(agg.total)}`);
     return lines.join('\n');
   }
+  // the order checklist: tick each line as it goes into the Talabat cart
+  function lineId(l) { let h = 5381; const k = l.name + '|' + l.price + '|' + (l.note || '') + '|' + l.qty; for (let i = 0; i < k.length; i++) h = ((h * 33) ^ k.charCodeAt(i)) >>> 0; return 'l' + h.toString(36); }
+  function checkProgress(c, agg) {
+    const n = agg.lines.length, d = agg.lines.filter(l => (c.checked || {})[lineId(l)]).length;
+    return `<div class="chk-prog${d === n ? ' all' : ''}"><span>${esc(d === n ? t('checkedAll') : t('checkedN', { d, n }))}</span><span class="bar"><i style="width:${Math.round(d / n * 100)}%"></i></span>${d ? `<button class="link-btn" data-act="clearChecks">${esc(t('clearChecks'))}</button>` : ''}</div>`;
+  }
   function tabOrder(c, st, host) {
     const agg = C.aggregate(c);
     if (!agg.lines.length) return `<p class="empty">${esc(t('orderEmpty'))}</p>`;
@@ -785,11 +795,13 @@
       ${st === 'ordered' || st === 'settled' ? `<p class="banner ok">${esc(t('orderedNote'))}</p>` : ''}
       <div class="ticket">
         <div class="ticket-head"><strong>${esc(r.name)}</strong><span class="muted tnum">${esc(fmtTime(Date.now()))}</span></div>
-        <ul class="agg">${agg.lines.map(l => `<li>
+        ${checkProgress(c, agg)}
+        <ul class="agg">${agg.lines.map(l => { const id = lineId(l), on = !!(c.checked || {})[id]; return `<li class="${on ? 'done' : ''}">
+          <label class="chk"><input type="checkbox" data-change="checkLine" data-id="${id}" ${on ? 'checked' : ''} ${host ? '' : 'disabled'} aria-label="${esc(t('markOrdered1'))}"></label>
           <span class="q tnum">${l.qty}×</span>
           <span class="n">${esc(l.name)}${l.custom ? ` <small class="tag">${esc(t('notOnMenu'))}</small>` : ''}${l.note ? `<em>${esc(l.note)}</em>` : ''}<small class="muted">${esc(t('forWho'))}: ${l.who.map(w => esc(w.name) + (w.qty > 1 ? ' ×' + w.qty : '')).join(comma())}</small></span>
           <span class="p tnum">${l.price ? esc(C.fmtMoney(l.total)) : '?'}</span>
-        </li>`).join('')}</ul>
+        </li>`; }).join('')}</ul>
         ${agg.lines.some(l => l.custom) ? `<p class="muted small-text">${esc(t('customOrderHint'))}</p>` : ''}
         <div class="ticket-foot">
           <div><span>${esc(t('pieces'))}</span><strong class="tnum">${agg.pieces}</strong></div>
@@ -1454,6 +1466,7 @@
     copyInvoiceLink: el => copyText(el.dataset.text),
     openTalabat: () => openTalabatApp(),
     viewReceipt: el => openReceipt(el.dataset.id),
+    clearChecks: () => { const c = curCart(); c.checked = {}; render(true); patch(c, { checked: {} }); },
     delShared: el => { const c = curCart(); patch(c, { shared: (c.shared || []).filter(x => x.id !== el.dataset.id) }); },
     shAll: () => document.querySelectorAll('.sh-people input').forEach(i => { i.checked = true; }),
     shNone: () => document.querySelectorAll('.sh-people input').forEach(i => { i.checked = false; }),
@@ -2227,6 +2240,7 @@
     },
     chPerson: el => { const c = curCart(); const list = clone(c.charges); list[+el.dataset.i].person = el.value; patch(c, { charges: list }); },
     roundUp: el => patch(curCart(), { roundUp: el.checked }),
+    checkLine: el => { const c = curCart(); c.checked = Object.assign({}, c.checked, { [el.dataset.id]: el.checked || undefined }); render(true); patch(c, { ['checked.' + el.dataset.id]: el.checked ? true : null }); },
     sharedName: el => { const c = curCart(); const it = (c.menu || []).find(i => C.sameItem(i.name, el.value)); const pr = $('#sh-price'); if (it && pr && !pr.value) pr.value = it.price; },
     hostExempt: el => { patch(curCart(), { hostExempt: el.checked }); if (S.profile.hostAuto) saveHostDefaults({ hostExempt: el.checked }); },
     hostFee: el => { const v = Math.max(0, C.round2(C.num(el.value))); patch(curCart(), { hostFee: v, hostFeeLabel: t('hostFeeLabel') }); if (S.profile.hostAuto) saveHostDefaults({ hostFee: v }); },
