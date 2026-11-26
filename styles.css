@@ -738,3 +738,46 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .mi-label { white-space: normal; }
 .menu .cat-tabs { top: calc(env(safe-area-inset-top, 0px) + 112px); }
 .menu .menu-group { scroll-margin-top: 175px; }
+
+/* ===== menu: section chips, headings and dish cards ===== */
+.cat-tabs { gap: 8px; padding: 10px 2px; }
+.chip-btn { background: var(--surface); border: 1px solid var(--line); padding: 7px 14px; font-weight: 600; transition: background .15s, color .15s, border-color .15s; }
+.chip-btn.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cat { background: none; padding: 0; margin: 4px 2px 10px; border: 0; display: flex; align-items: center; gap: 8px; font-size: 1.12rem; font-weight: 800; color: var(--ink); justify-content: flex-start; font-family: var(--f-display); }
+.cat .cat-ico { font-size: 1.3rem; line-height: 1; }
+.cat .cat-name { flex: none; }
+.cat .cat-n { margin-inline-start: auto; font-size: .78rem; font-weight: 500; color: var(--muted); font-family: inherit; }
+.cat .cat-rename { min-height: 30px; padding: 2px 10px; }
+.menu-group + .menu-group { margin-top: 22px; }
+
+.dishes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.dish { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 12px 12px 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); transition: border-color .15s, box-shadow .15s; }
+.dish.in { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.dish-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; background: none; border: 0; padding: 0; text-align: start; color: inherit; font: inherit; cursor: pointer; }
+.dish-name { font-size: 1rem; font-weight: 700; line-height: 1.4; white-space: normal; }
+.dish-price { font-size: .95rem; font-weight: 700; color: var(--accent); }
+.dish-add { flex: none; width: 40px; height: 40px; border-radius: 12px; border: 0; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; cursor: pointer; }
+.dish-add:active { transform: scale(.92); }
+.dish-step { flex: none; display: inline-flex; align-items: center; gap: 2px; background: var(--accent); color: var(--accent-ink); border-radius: 12px; padding: 3px; }
+.dish-step button { width: 34px; height: 34px; border: 0; border-radius: 9px; background: transparent; color: inherit; font-size: 1.2rem; font-weight: 800; cursor: pointer; }
+.dish-step button:active { background: rgba(255,255,255,.18); }
+.dish-step b { min-width: 22px; text-align: center; font-size: 1rem; }
+.dish[hidden] { display: none; }
+
+/* restaurant editor: tidy rows, tap one to edit it */
+.edit-items { display: flex; flex-direction: column; gap: 8px; }
+.edit-items li.ed-row, .edit-items li.ed-open { display: block; padding: 0; border: 0; }
+.ed-sum { width: 100%; display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; text-align: start; color: inherit; font: inherit; cursor: pointer; }
+.ed-sum:hover { border-color: var(--accent); }
+.ed-name { flex: 1; min-width: 0; font-weight: 600; line-height: 1.4; display: flex; flex-direction: column; gap: 2px; }
+.ed-name small { font-weight: 500; }
+.ed-price { font-weight: 700; color: var(--accent); flex: none; }
+.ed-pen { color: var(--muted); flex: none; font-size: .9rem; }
+.ed-row.fresh .ed-sum { background: var(--sun-soft); border-color: transparent; }
+.ed-open { background: var(--surface); border: 1.5px solid var(--accent) !important; border-radius: 14px; padding: 12px 14px !important; display: flex !important; flex-direction: column; gap: 10px; }
+.ed-open textarea.ei-name { width: 100%; border: 1px solid var(--line); background: var(--bg); padding: 8px 10px; border-radius: 10px; font: inherit; resize: vertical; field-sizing: content; min-height: 42px; color: inherit; }
+.ed-open .ei-price { width: 100%; }
+.ed-open .ei-cat { width: 100%; max-width: none; border-style: solid; color: inherit; font-size: .95rem; min-height: 42px; margin: 0; }
+.ed-open .field { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; }
+.ed-open .field > textarea, .ed-open .field > input, .ed-open .field > select { width: 100% !important; max-width: none; box-sizing: border-box; }
+.ed-open .grid2 { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }

@@ -220,6 +220,19 @@
     return shell(body) + receiptModal();
   }
 
+  // section chips follow the scroll: the section at the top of the screen is the highlighted chip
+  let spyT = 0;
+  window.addEventListener('scroll', () => {
+    if (spyT) return;
+    spyT = setTimeout(() => {
+      spyT = 0;
+      const chips = document.querySelectorAll('.cat-tabs .chip-btn'); if (!chips.length) return;
+      let cur = chips[0];
+      for (const b of chips) { const g = document.getElementById(b.dataset.target); if (g && g.getBoundingClientRect().top < 200) cur = b; }
+      if (!cur.classList.contains('on')) { chips.forEach(b => b.classList.toggle('on', b === cur)); cur.scrollIntoView({ block: 'nearest', inline: 'center' }); }
+    }, 80);
+  }, { passive: true });
+
   function shell(body) {
     const demo = isLocal();
     let acting = '';
@@ -726,14 +739,22 @@
         <input type="search" id="menu-search" class="search" data-input="search" placeholder="${esc(t('search'))}" value="${esc(S.menuQuery)}">
         ${catTabs(groups, 'mc')}
         ${groups.map((g, gi) => `<div class="menu-group" id="mc-${gi}" data-group${q && !g.items.some(it => it.name.toLowerCase().includes(q)) ? ' hidden' : ''}>
-          ${g.name || g.other ? `<h3 class="cat">${esc(g.name || t('otherCat'))} <small class="tnum">${g.items.length}</small></h3>` : ''}
-          <ul class="menu-items">${g.items.map(it => {
+          ${g.name || g.other ? catHead(g) : ''}
+          <ul class="dishes">${g.items.map(it => {
             const n = qtyById[it.id] || 0;
-            return `<li class="menu-item" data-name="${esc(it.name.toLowerCase())}"${q && !it.name.toLowerCase().includes(q) ? ' hidden' : ''}>
-              <button class="mi-add${n ? ' has' : ''}" data-act="addMenu" data-id="${esc(it.id)}">
-                <span class="mi-label">${esc(it.name)}</span><span class="mi-price tnum">${esc(money(it.price))}</span>
-                <span class="mi-plus" aria-hidden="true">${n ? `<b class="tnum">${n}</b>` : plusIcon()}</span>
-              </button></li>`;
+            const mine = n ? items.filter(x => x.menuId === it.id).pop() : null;
+            return `<li class="menu-item dish${n ? ' in' : ''}" data-name="${esc(it.name.toLowerCase())}"${q && !it.name.toLowerCase().includes(q) ? ' hidden' : ''}>
+              <button class="dish-main" data-act="addMenu" data-id="${esc(it.id)}" aria-label="${esc(t('addOne', { name: it.name }))}">
+                <strong class="dish-name">${esc(it.name)}</strong>
+                <span class="dish-price tnum">${esc(money(it.price))}</span>
+              </button>
+              ${n && mine ? `<div class="dish-step" role="group">
+                  <button data-act="qty" data-id="${esc(mine.id)}" data-d="-1" aria-label="−">−</button>
+                  <b class="tnum">${n}</b>
+                  <button data-act="addMenu" data-id="${esc(it.id)}" aria-label="+">+</button>
+                </div>`
+                : `<button class="dish-add" data-act="addMenu" data-id="${esc(it.id)}" aria-label="${esc(t('addOne', { name: it.name }))}">${plusIcon()}</button>`}
+            </li>`;
           }).join('')}</ul></div>`).join('')}
         <p class="empty small" id="no-match" hidden>${esc(t('noMatch'))}</p>
         <details class="panel custom">
@@ -840,11 +861,15 @@
     if (map['']) out.push({ name: '', items: map[''], other: named.length > 0 });
     return out;
   }
+  const CAT_EMOJI = [[/فول/, '🫘'], [/فلافل|طعمي/, '🧆'], [/بطاطس|بوريه/, '🍟'], [/بيض|اومليت|أومليت/, '🍳'], [/لحوم|فراخ|كبد|سجق/, '🍗'], [/جبن/, '🧀'],
+    [/سلط|جانبي/, '🥗'], [/عيش|خبز|إضاف|اضاف/, '🥖'], [/مشروب|شاي|قهو|عصير/, '🥤'], [/حلو/, '🍰'], [/علب|بوكس|box/i, '🥡']];
+  const catEmoji = name => { for (const [re, e] of CAT_EMOJI) if (re.test(name || '')) return e; return '🍽️'; };
   // a row of section chips that jumps to each section
   function catTabs(groups, prefix) {
     if (groups.length < 2) return '';
-    return `<nav class="cat-tabs" aria-label="${esc(t('sections'))}">${groups.map((g, i) => `<button class="chip-btn" data-act="jumpCat" data-target="${prefix}-${i}">${esc(g.name || t('otherCat'))} <small class="tnum">${g.items.length}</small></button>`).join('')}</nav>`;
+    return `<nav class="cat-tabs" aria-label="${esc(t('sections'))}">${groups.map((g, i) => `<button class="chip-btn${i === 0 ? ' on' : ''}" data-act="jumpCat" data-target="${prefix}-${i}"><span aria-hidden="true">${catEmoji(g.name)}</span> ${esc(g.name || t('otherCat'))}</button>`).join('')}</nav>`;
   }
+  const catHead = (g, extra) => `<h3 class="cat"><span class="cat-ico" aria-hidden="true">${catEmoji(g.name)}</span><span class="cat-name">${esc(g.name || t('otherCat'))}</span><small class="cat-n tnum">${esc(t('itemsCount', { n: g.items.length }))}</small>${extra || ''}</h3>`;
 
   /* people */
   function tabPeople(c, st, host) {
@@ -1422,13 +1447,20 @@
         ${d.items.length ? `<div class="sort-bar"><button class="secondary small" data-act="autoSortMenu">🗂 ${esc(S.confirmKey === 'autoSort' ? t('confirmAgain') : t('autoSort'))}</button><small class="muted">${esc(t('autoSortHint'))}</small></div>` : ''}
         ${catTabs(cats, 'ec')}
         ${d.items.length ? cats.map((g, gi) => `<div class="menu-group" id="ec-${gi}">
-            ${g.name || g.other ? `<h3 class="cat cat-edit"><span>${esc(g.name || t('otherCat'))} <small class="tnum">${g.items.length}</small></span>${g.name ? `<button class="ghost small" data-act="renameCat" data-cat="${esc(g.name)}">✎ ${esc(t('rename'))}</button>` : ''}</h3>` : ''}
-            <ul class="edit-items">${g.items.map(it => `<li${it.fresh ? ' class="fresh"' : ''}>
-              <textarea class="ei-name" id="ei-n-${esc(it.id)}" data-change="itemName" data-id="${esc(it.id)}" rows="${Math.max(1, Math.ceil(it.name.length / 26))}" aria-label="${esc(t('itemName'))}">${esc(it.name)}</textarea>
-              <input class="ei-price tnum" id="ei-p-${esc(it.id)}" data-change="itemPrice" data-id="${esc(it.id)}" inputmode="decimal" value="${esc(it.price)}" aria-label="${esc(t('price'))}">
-              <button class="icon-btn" data-act="draftDelItem" data-id="${esc(it.id)}" aria-label="${esc(t('delete'))}">×</button>
-              <select class="ei-cat" data-change="itemCat" data-id="${esc(it.id)}" aria-label="${esc(t('category'))}">${cats.filter(x => x.name).map(x => `<option value="${esc(x.name)}"${x.name === (it.category || '') ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}<option value=""${!(it.category || '') ? ' selected' : ''}>${esc(t('otherCat'))}</option><option value="__new">＋ ${esc(t('newCat'))}</option></select>
-              ${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : moveTag(d.name, it.name, C.num(it.price), true)}
+            ${g.name || g.other ? catHead(g, g.name ? `<button class="ghost small cat-rename" data-act="renameCat" data-cat="${esc(g.name)}">✎</button>` : '') : ''}
+            <ul class="edit-items">${g.items.map(it => S.editItem === it.id ? `<li class="ed-open${it.fresh ? ' fresh' : ''}">
+              <label class="field"><span>${esc(t('itemName'))}</span><textarea class="ei-name" id="ei-n-${esc(it.id)}" data-change="itemName" data-id="${esc(it.id)}" rows="${Math.max(1, Math.ceil(it.name.length / 30))}">${esc(it.name)}</textarea></label>
+              <div class="grid2">
+                <label class="field"><span>${esc(t('price'))}</span><input class="ei-price tnum" id="ei-p-${esc(it.id)}" data-change="itemPrice" data-id="${esc(it.id)}" inputmode="decimal" value="${esc(it.price)}"></label>
+                <label class="field"><span>${esc(t('category'))}</span><select class="ei-cat" data-change="itemCat" data-id="${esc(it.id)}">${cats.filter(x => x.name).map(x => `<option value="${esc(x.name)}"${x.name === (it.category || '') ? ' selected' : ''}>${esc(catEmoji(x.name) + ' ' + x.name)}</option>`).join('')}<option value=""${!(it.category || '') ? ' selected' : ''}>${esc(t('otherCat'))}</option><option value="__new">＋ ${esc(t('newCat'))}</option></select></label>
+              </div>
+              <div class="btn-row">
+                <button class="primary small" data-act="editItemDone">✓ ${esc(t('done'))}</button>
+                <button class="danger-ghost small" data-act="draftDelItem" data-id="${esc(it.id)}">${esc(t('delete'))}</button>
+              </div>
+            </li>` : `<li class="ed-row${it.fresh ? ' fresh' : ''}"><button class="ed-sum" data-act="editItem" data-id="${esc(it.id)}">
+              <span class="ed-name">${esc(it.name)}${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : moveTag(d.name, it.name, C.num(it.price), true)}</span>
+              <span class="ed-price tnum">${esc(C.fmtMoney(it.price))}</span><span class="ed-pen" aria-hidden="true">✎</span>
             </li>`).join('')}</ul></div>`).join('') : `<p class="empty">${esc(t('menuEmpty'))}</p>`}
         <form class="panel form add-item" data-submit="draftAddItem" novalidate>
           <div class="grid3">
@@ -1804,7 +1836,9 @@
       if (h.gid !== S.gid) setGroup(h.gid, true);
       go('cart', { id: h.cid, tab: 'mine' });
     },
-    jumpCat: el => { const g = document.getElementById(el.dataset.target); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+    editItem: el => { syncDraft(); S.editItem = el.dataset.id; render(true); const f = $('#ei-n-' + el.dataset.id); if (f) f.focus(); },
+    editItemDone: () => { syncDraft(); S.editItem = null; render(true); },
+    jumpCat: el => { document.querySelectorAll('.cat-tabs .chip-btn').forEach(b => b.classList.toggle('on', b === el)); el.scrollIntoView({ block: 'nearest', inline: 'center' }); const g = document.getElementById(el.dataset.target); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
     autoSortMenu: () => {
       if (S.confirmKey !== 'autoSort') { syncDraft(); S.confirmKey = 'autoSort'; return render(true); }
       S.confirmKey = null; syncDraft();
@@ -3178,7 +3212,7 @@
       const it = S.draft && S.draft.items.find(i => i.id === el.dataset.id); if (!it) return;
       let v = el.value;
       if (v === '__new') { v = (window.prompt(t('newCatPrompt')) || '').trim(); if (!v) return render(true); }
-      it.category = v; render(true); toast(t('movedTo', { c: v || t('otherCat') }));
+      it.category = v; S.editItem = null; render(true); toast(t('movedTo', { c: v || t('otherCat') }));
     },
     itemPrice: () => syncDraft()
   };
