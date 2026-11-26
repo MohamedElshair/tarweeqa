@@ -786,3 +786,10 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .wallet-line small { flex-basis: 100%; font-weight: 500; }
 .tq-fee { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .panel > .tq-fee:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* never wider than the phone: long section names and item names wrap */
+html, body { overflow-x: clip; }
+.cat .cat-name { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.chip-btn { max-width: 70vw; overflow: hidden; text-overflow: ellipsis; }
+.page h1, .page h2, .page h3, .ed-name, .dish-name, .row-link strong, .pr-main strong { overflow-wrap: anywhere; }
+.page img, .page select, .page input, .page textarea { max-width: 100%; }

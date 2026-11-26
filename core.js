@@ -71,7 +71,7 @@
   }
   /* tidy a name read from a screenshot: drop symbols, digits and the 1–2 letter crumbs OCR leaves at the ends */
   function cleanOcrName(s) {
-    let w = String(s || '').replace(/[<>«»*|_=~^\[\]{}()"'`؛;:!?؟،,…]+/g, ' ').replace(/\d+(?:[.,]\d+)?/g, ' ')
+    let w = String(s || '').replace(/[\u2063\u200e\u200f]/g, '').replace(/[<>«»*|_=~^\[\]{}()"'`؛;:!?؟،,…]+/g, ' ').replace(/\d+(?:[.,]\d+)?/g, ' ')
       .replace(/\.+/g, ' ').split(/\s+/).filter(Boolean);
     while (w.length > 2 && letterCount(w[w.length - 1]) <= 2) w.pop();
     while (w.length > 2 && letterCount(w[0]) <= 1) w.shift();
