@@ -506,6 +506,16 @@
       r.lines.push({ id: 'hostFee', kind: 'hostFee', label: cart.hostFeeLabel || 'Host fee', value: v, perItem: fee, qty: q });
       r.exact = round2(r.exact + v); hostFees = round2(hostFees + v);
     }
+    // Tarweeqa's commission: a % of each person's food, or a fixed amount per person (the host pays none)
+    const tq = cart.tqFee || {}, tqv = num(tq.value);
+    let tqFees = 0;
+    if (tqv > 0) for (const r of rows) {
+      if (r.key === cart.ownerId) continue;
+      const v = round2(tq.mode === 'fixed' ? tqv : r.subtotal * tqv / 100);
+      if (!v) continue;
+      r.lines.push({ id: 'tqFee', kind: 'tqFee', label: cart.tqFeeLabel || 'Tarweeqa fee', value: v, pct: tq.mode === 'fixed' ? null : tqv });
+      r.exact = round2(r.exact + v); tqFees = round2(tqFees + v);
+    }
     const payments = cart.payments || {};
     for (const r of rows) {
       r.total = cart.roundUp ? Math.ceil(r.exact - 0.0001) : r.exact;
@@ -529,7 +539,7 @@
     }
     const collected = round2(rows.reduce((s, r) => s + r.total, 0));
     const paidSum = round2(rows.reduce((s, r) => s + r.paid, 0));
-    return { rows, food, chargesTotal, grand, collected, extra: round2(collected - grand - hostFees), hostFees, exempt, paidSum, people: n };
+    return { rows, food, chargesTotal, grand, collected, extra: round2(collected - grand - hostFees - tqFees), hostFees, tqFees, exempt, paidSum, people: n };
   }
 
   /* Running balances between each person and each host, across placed orders.

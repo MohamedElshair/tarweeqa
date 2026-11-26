@@ -1588,6 +1588,7 @@
         <div class="section-head"><h2>${esc(t('admTopDebts'))}</h2><button class="ghost small" data-act="admTab" data-tab="money">${esc(t('seeAll'))} ›</button></div>
         ${debts.filter(x => x.owe > 0).length ? `<ul class="people">${debts.filter(x => x.owe > 0).slice(0, 5).map(x => `<li class="person"><span class="avatar sm">${esc(initial(x.name))}</span><span class="p-main"><strong>${esc(x.name)}</strong><small class="muted">${esc(t('admOrdersN', { n: x.orders.filter(o => o.due > 0).length }))}</small></span><span class="p-side"><b class="tnum warn-txt">${esc(money(x.owe))}</b></span></li>`).join('')}</ul>` : `<p class="empty small">${esc(t('nobodyOwes'))}</p>`}
       </section>
+      <section class="panel form">${tqFeeFields(S.profile.tqFeeMode, S.profile.tqFeeValue, 'profTq')}<small class="muted">${esc(t('tqFeeDefaultHint'))}</small></section>
       <section class="panel">
         <p class="label">${esc(t('admQuick'))}</p>
         <div class="btn-row">
@@ -2647,7 +2648,19 @@
   function saveHostDefaults(o) {
     Object.assign(S.profile, o);
     if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
-    if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(S.profile.name, { instapay: S.profile.instapay, instapayLink: S.profile.instapayLink || '', wallet: S.profile.wallet, hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee), hostAuto: !!S.profile.hostAuto }));
+    if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(S.profile.name, { instapay: S.profile.instapay, instapayLink: S.profile.instapayLink || '', wallet: S.profile.wallet, hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee), hostAuto: !!S.profile.hostAuto, tqFeeMode: S.profile.tqFeeMode || 'pct', tqFeeValue: C.num(S.profile.tqFeeValue) }));
+  }
+  // Tarweeqa commission: % of each person's food, or a fixed amount per person
+  function tqFeeFields(mode, value, act) {
+    mode = mode === 'fixed' ? 'fixed' : 'pct';
+    return `<div class="tq-fee">
+      <p class="label">🟢 ${esc(t('tqFeeTitle'))}</p>
+      <div class="grid2">
+        <label class="field"><span>${esc(t('tqFeeMode'))}</span><select id="${act}-mode" data-change="${act}"><option value="pct"${mode === 'pct' ? ' selected' : ''}>${esc(t('tqFeePct'))}</option><option value="fixed"${mode === 'fixed' ? ' selected' : ''}>${esc(t('tqFeeFixed'))}</option></select></label>
+        <label class="field"><span>${esc(mode === 'pct' ? t('tqFeePctVal') : t('tqFeeFixedVal'))}</span><input id="${act}-val" class="tnum" inputmode="decimal" data-change="${act}" value="${C.num(value) ? esc(value) : ''}" placeholder="0"></label>
+      </div>
+      <small class="muted">${esc(t('tqFeeHint'))}</small>
+    </div>`;
   }
   function hostOptions(c) {
     const bill = C.computeBill(c, {});
@@ -2658,6 +2671,8 @@
       <label class="field inline-field"><span>${esc(t('hostFeeLbl'))}</span><input id="host-fee" class="tnum" inputmode="decimal" data-change="hostFee" value="${C.num(c.hostFee) ? esc(c.hostFee) : ''}" placeholder="0"></label>
       ${C.num(c.hostFee) > 0 ? `<p class="muted small-text tnum">${esc(t('hostFeeSum', { n: items, a: money(bill.hostFees || 0) }))}</p>` : ''}
       <label class="check"><input type="checkbox" id="host-auto" data-change="hostAuto" ${S.profile.hostAuto ? 'checked' : ''}><span>${esc(t('hostAutoLbl'))}</span></label>
+      ${tqFeeFields((c.tqFee || {}).mode, (c.tqFee || {}).value, 'cartTq')}
+      ${C.num((c.tqFee || {}).value) > 0 ? `<p class="muted small-text tnum">${esc(t('tqFeeSum', { a: money(bill.tqFees || 0) }))}</p>` : ''}
     </div>`;
   }
 
@@ -3200,6 +3215,8 @@
     hostExempt: el => { patch(curCart(), { hostExempt: el.checked }); if (S.profile.hostAuto) saveHostDefaults({ hostExempt: el.checked }); },
     hostFee: el => { const v = Math.max(0, C.round2(C.num(el.value))); patch(curCart(), { hostFee: v, hostFeeLabel: t('hostFeeLabel') }); if (S.profile.hostAuto) saveHostDefaults({ hostFee: v }); },
     hostAuto: el => { const c = curCart(); saveHostDefaults(el.checked ? { hostAuto: true, hostExempt: !!c.hostExempt, hostFee: C.num(c.hostFee) } : { hostAuto: false, hostExempt: false, hostFee: 0 }); toast(el.checked ? t('hostAutoOn') : t('hostAutoOff')); },
+    cartTq: () => { const mode = ($('#cartTq-mode') || {}).value || 'pct', value = Math.max(0, C.round2(C.num(($('#cartTq-val') || {}).value))); patch(curCart(), { tqFee: { mode, value }, tqFeeLabel: t('tqFeeLabel') }); },
+    profTq: () => { const mode = ($('#profTq-mode') || {}).value || 'pct', value = Math.max(0, C.round2(C.num(($('#profTq-val') || {}).value))); saveHostDefaults({ tqFeeMode: mode, tqFeeValue: value }); render(true); toast(t('saved')); },
     profHostExempt: el => saveHostDefaults({ hostExempt: el.checked, hostAuto: el.checked || C.num(S.profile.hostFee) > 0 }),
     profHostFee: el => { const v = Math.max(0, C.round2(C.num(el.value))); saveHostDefaults({ hostFee: v, hostAuto: v > 0 || !!S.profile.hostExempt }); },
     payInfo: el => patch(curCart(), { ['payInfo.' + el.dataset.k]: el.value.trim() }),
@@ -3445,7 +3462,8 @@
         createdAt: Date.now(), closesAt: close.getTime(),
         candidates: [], candidateInfo: {}, votes: {}, members: {}, payments: {}, charges: [], roundUp: true,
         payInfo: { instapay, instapayLink, wallet },
-        hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee) || 0, hostFeeLabel: t('hostFeeLabel')
+        hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee) || 0, hostFeeLabel: t('hostFeeLabel'),
+        tqFee: { mode: S.profile.tqFeeMode || 'pct', value: C.num(S.profile.tqFeeValue) || 0 }, tqFeeLabel: t('tqFeeLabel')
       };
       const chosen = S.sel.map(id => S.restaurants.find(r => r.id === id)).filter(r => r && reachOf(r).state !== 'far');
       if (!chosen.length) return toast(t('needRest'), 'warn');

@@ -784,3 +784,5 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .wallet-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); border: 1px solid var(--accent); font-weight: 600; }
 .wallet-line b { font-size: 1.15rem; color: var(--accent); }
 .wallet-line small { flex-basis: 100%; font-weight: 500; }
+.tq-fee { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.panel > .tq-fee:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
