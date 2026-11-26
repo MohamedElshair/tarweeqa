@@ -1,7 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
-    cancel: 'إلغاء', pickSome: 'حدّد أكتر من صنف', pickedN: 'محدد {n}', moveTo: 'انقل إلى…', moveBtn: 'انقل', movedN: 'اتنقل {n} صنف لـ «{c}». دوس «حفظ».', deletedN: 'اتمسح {n} صنف. دوس «حفظ».',
+    pickFirst: 'حدّد صنف واحد على الأقل الأول', cancel: 'إلغاء', pickSome: 'حدّد أكتر من صنف', pickedN: 'محدد {n}', moveTo: 'انقل إلى…', moveBtn: 'انقل', movedN: 'اتنقل {n} صنف لـ «{c}». دوس «حفظ».', deletedN: 'اتمسح {n} صنف. دوس «حفظ».',
     tqFeeTitle: 'عمولة ترويقة', tqFeeLabel: 'عمولة ترويقة', tqFeeMode: 'طريقة الحساب', tqFeePct: 'نسبة % من أكل كل واحد', tqFeeFixed: 'مبلغ ثابت على كل واحد', tqFeePctVal: 'النسبة %', tqFeeFixedVal: 'المبلغ (ج.م)', tqFeeHint: 'بتتضاف سطر لوحدها في فاتورة كل واحد. صاحب الطلب مش بيدفعها.', tqFeeDefaultHint: 'دي القيمة اللي بتتحط تلقائي في أي طلب جديد، وتقدر تغيّرها لكل طلب من «الحساب».', tqFeeSum: 'العمولة في الطلب ده: {a}',
     walletLeft: 'باقي في محفظتك بعد الطلب ده: {a}', payByWallet: 'اتدفع من المحفظة', walletBal: 'محفظتك', walletHint: 'فلوس زيادة دفعتها، هتتخصم من طلبك الجاي لوحدها.',
     addOne: 'ضيف {name}', category: 'القسم', sections: 'الأقسام', otherCat: 'أخرى', autoSort: 'رتّب الأصناف حسب النوع', autoSortHint: 'الفول مع بعض، الفلافل مع بعض، البطاطس مع بعض… وتقدر تنقل أي صنف بإيدك من القائمة اللي تحته.', autoSorted: 'اترتّب {n} صنف. راجع ودوس «حفظ».', newCat: 'قسم جديد…', newCatPrompt: 'اسم القسم الجديد:', renameCatPrompt: 'الاسم الجديد للقسم:', movedTo: 'اتنقل لـ «{c}»',
@@ -267,7 +267,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
-    cancel: 'Cancel', pickSome: 'Select several', pickedN: '{n} selected', moveTo: 'Move to…', moveBtn: 'Move', movedN: 'Moved {n} items to “{c}”. Tap “Save”.', deletedN: 'Deleted {n} items. Tap “Save”.',
+    pickFirst: 'Select at least one item first', cancel: 'Cancel', pickSome: 'Select several', pickedN: '{n} selected', moveTo: 'Move to…', moveBtn: 'Move', movedN: 'Moved {n} items to “{c}”. Tap “Save”.', deletedN: 'Deleted {n} items. Tap “Save”.',
     tqFeeTitle: 'Tarweeqa commission', tqFeeLabel: 'Tarweeqa fee', tqFeeMode: 'How', tqFeePct: '% of each person’s food', tqFeeFixed: 'Fixed amount per person', tqFeePctVal: 'Percent %', tqFeeFixedVal: 'Amount (EGP)', tqFeeHint: 'Added as its own line on each person’s bill. The host doesn’t pay it.', tqFeeDefaultHint: 'This is filled in for every new order; change it per order in “Bill”.', tqFeeSum: 'Commission on this order: {a}',
     walletLeft: 'Left in your wallet after this order: {a}', payByWallet: 'Paid from wallet', walletBal: 'Your wallet', walletHint: 'Extra you paid; it comes off your next order by itself.',
     addOne: 'Add {name}', category: 'Section', sections: 'Sections', otherCat: 'Other', autoSort: 'Sort items by type', autoSortHint: 'Foul together, falafel together, potatoes together… Move any item by hand with the list under it.', autoSorted: 'Sorted {n} items. Check and tap “Save”.', newCat: 'New section…', newCatPrompt: 'Name of the new section:', renameCatPrompt: 'New name for the section:', movedTo: 'Moved to “{c}”',

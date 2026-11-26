@@ -802,3 +802,7 @@ html, body { overflow-x: clip; }
 .pick-bar .pb-n { font-weight: 700; }
 .pick-bar select { flex: 1 1 140px; min-width: 0; min-height: 38px; margin: 0; }
 .sort-bar .btn-row { flex-wrap: wrap; }
+.sticky-actions.away { display: none; }
+.ed-open { scroll-margin-bottom: 110px; }
+.pick-bar { bottom: calc(env(safe-area-inset-bottom, 0px) + 78px); }
+.page:has(.pick-bar) { padding-bottom: 170px; }

@@ -1398,12 +1398,18 @@
     </button></li>`;
   }
   // swap one item's row in place, without drawing the whole page again (fast with long menus)
+  function saveBarState() {
+    const bar = document.querySelector('.sticky-actions');
+    if (bar) bar.classList.toggle('away', !!S.editItem || !!S.pickMode);
+  }
   function redrawItem(id) {
     const li = document.querySelector(`.edit-items li[data-item="${CSS.escape(id)}"]`);
     const it = S.draft && S.draft.items.find(i => i.id === id);
     if (!li || !it) return false;
     const tmp = document.createElement('ul'); tmp.innerHTML = edItem(it, groupByCategory(S.draft.items), S.draft);
-    li.replaceWith(tmp.firstElementChild);
+    const nu = tmp.firstElementChild; li.replaceWith(nu);
+    saveBarState();
+    if (S.editItem === id) setTimeout(() => nu.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 30);
     return true;
   }
   function pickBar() {
@@ -1411,7 +1417,7 @@
     const n = S.picked.size, cats = groupByCategory(S.draft.items);
     return `<div class="pick-bar" role="region" aria-label="${esc(t('pickSome'))}">
       <span class="tnum pb-n">${esc(t('pickedN', { n }))}</span>
-      ${catSelect(cats, '__none', `id="pick-cat" aria-label="${esc(t('moveTo'))}"`).replace('<select', `<select${n ? '' : ' disabled'}`).replace('>', `><option value="__none" selected disabled>${esc(t('moveTo'))}</option>`)}
+      ${catSelect(cats, '__none', `id="pick-cat" data-change="pickCat" aria-label="${esc(t('moveTo'))}"`).replace('<select', `<select${n ? '' : ' disabled'}`).replace('>', `><option value="__none" selected disabled>${esc(t('moveTo'))}</option>`)}
       <button class="primary small" data-act="pickMove"${n ? '' : ' disabled'}>${esc(t('moveBtn'))}</button>
       <button class="ghost small" data-act="pickDelete"${n ? '' : ' disabled'}>${esc(S.confirmKey === 'pickDel' ? t('confirmAgain') : '🗑')}</button>
       <button class="ghost small" data-act="pickDone">${esc(t('cancel'))}</button>
@@ -1508,7 +1514,7 @@
         </form>
       </section>
 
-      <div class="sticky-actions">
+      <div class="sticky-actions${S.editItem || S.pickMode ? ' away' : ''}">
         <button class="primary block" data-act="saveRestaurant">${esc(t('save'))}</button>
         ${d.id ? `<button class="danger-ghost" data-act="deleteRestaurant">${esc(S.confirmKey === 'delRest' ? t('confirmAgain') : t('deleteRest'))}</button>` : ''}
       </div>`;
@@ -1882,7 +1888,7 @@
       const prev = S.editItem; S.editItem = el.dataset.id;
       if (!(redrawItem(el.dataset.id) && (!prev || prev === el.dataset.id || redrawItem(prev)))) render(true);
     },
-    editItemDone: () => { syncDraft(); const prev = S.editItem; S.editItem = null; if (!prev || !redrawItem(prev)) render(true); },
+    editItemDone: () => { syncDraft(); const prev = S.editItem; S.editItem = null; if (!prev || !redrawItem(prev)) render(true); saveBarState(); },
     pickStart: () => { syncDraft(); S.pickMode = !S.pickMode; S.picked = new Set(); S.editItem = null; S.confirmKey = null; render(true); },
     pickDone: () => { S.pickMode = false; S.picked = new Set(); render(true); },
     pickItem: el => {
@@ -1891,8 +1897,9 @@
       redrawItem(id);
       const bar = document.querySelector('.pick-bar'); if (bar) { const tmp = document.createElement('div'); tmp.innerHTML = pickBar(); bar.replaceWith(tmp.firstElementChild); }
     },
-    pickMove: () => {
-      let v = ($('#pick-cat') || {}).value;
+    pickMove: el => {
+      let v = el && el.tagName === 'SELECT' ? el.value : ($('#pick-cat') || {}).value;
+      if (!S.picked || !S.picked.size) return toast(t('pickFirst'), 'warn');
       if (v == null || v === '__none') return toast(t('moveTo'), 'warn');
       if (v === '__new') { v = (window.prompt(t('newCatPrompt')) || '').trim(); if (!v) return; }
       const n = S.picked.size;
@@ -3304,6 +3311,7 @@
     copyFrom: el => { S.copyFrom = el.value; },
     admSettled: el => { S.adm.showSettled = el.checked; render(true); },
     itemName: () => syncDraft(),
+    pickCat: el => actions.pickMove(el),
     itemCat: el => {
       syncDraft();
       const it = S.draft && S.draft.items.find(i => i.id === el.dataset.id); if (!it) return;
