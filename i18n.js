@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    tabMyBill: 'حسابي', reopenShort: 'افتحه تاني', orderedReopenHint: 'حد نسي يطلب؟ تقدر تفتح الطلب تاني.', reopened: 'الطلب اتفتح تاني ربع ساعة', openingOrder: 'بنفتحلك الطلب…',
     markOrdered1: 'اتطلب', checkedN: 'علّمت {d} من {n}', checkedAll: 'كله اتطلب ✓', clearChecks: 'امسح العلامات',
     instapayAny: 'InstaPay (العنوان أو الرابط، أو الصق رسالة إنستاباي كلها)', payInsta: 'ادفع {a} بإنستاباي', payInstaNote: 'هيفتح إنستاباي على الحساب على طول، اكتب المبلغ {a}.',
     copyAmount: 'انسخ المبلغ', msgPayLink: 'ادفع بإنستاباي على طول: {link}', instaLinkOk: 'رابط الدفع اتحفظ ({h}): هيظهر للناس زرار «ادفع بإنستاباي».',
@@ -184,6 +185,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    tabMyBill: 'My bill', reopenShort: 'Reopen', orderedReopenHint: 'Someone forgot to order? You can reopen it.', reopened: 'Order reopened for 15 minutes', openingOrder: 'Opening the order…',
     markOrdered1: 'Ordered', checkedN: 'Ticked {d} of {n}', checkedAll: 'All ordered ✓', clearChecks: 'Clear ticks',
     instapayAny: 'InstaPay (handle or link, or paste the whole InstaPay message)', payInsta: 'Pay {a} with InstaPay', payInstaNote: 'Opens InstaPay on the account directly; enter {a}.',
     copyAmount: 'Copy amount', msgPayLink: 'Pay with InstaPay directly: {link}', instaLinkOk: 'Payment link saved ({h}): people get a "Pay with InstaPay" button.',

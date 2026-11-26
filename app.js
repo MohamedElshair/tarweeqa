@@ -259,6 +259,7 @@
   function viewStart() {
     if (S.pending && S.pending.gid) {
       const g = S.pending.group;
+      if (S.pending.joining) return `<main class="page welcome"><div class="welcome-mark">${logoSvg()}</div><p class="lead">${esc(t('openingOrder'))}</p><div class="loading" aria-busy="true"></div></main>`;
       return `<main class="page welcome">
         <div class="welcome-mark">${logoSvg()}</div>
         ${g ? `<h1>${esc(t('joinTitle', { name: g.name }))}</h1><p class="lead">${esc(t('joinSub'))}</p>
@@ -447,7 +448,9 @@
     } else if (host && st === 'ordering' && !waiting.length) {
       banner = `<div class="banner ok"><span>${esc(t('allDone'))}</span><button class="small primary" data-act="closeCart">${esc(t('closeNow'))}</button></div>`;
     } else if (host && st === 'closed') {
-      banner = `<div class="banner ok"><span>${esc(t('closedPlace'))}</span><button class="small primary" data-act="tab" data-tab="order">${esc(t('tabOrder'))}</button></div>`;
+      banner = `<div class="banner ok"><span>${esc(t('closedPlace'))}</span><span class="btn-row tight"><button class="small secondary" data-act="reopen">${esc(t('reopenShort'))}</button><button class="small primary" data-act="tab" data-tab="order">${esc(t('tabOrder'))}</button></span></div>`;
+    } else if (host && st === 'ordered') {
+      banner = `<div class="banner soft"><span>${esc(t('orderedReopenHint'))}</span><button class="small secondary" data-act="reopen">${esc(t('reopenShort'))}</button></div>`;
     }
     const head = `${back('home')}
       <section class="cart-head">
@@ -466,7 +469,9 @@
       ${banner}`;
     if (st === 'voting') return head + votingView(c);
     if (tab === 'bill' && c.restaurant && !S.history[c.restaurant.name]) { S.history[c.restaurant.name] = []; loadHistory(c.restaurant.name, true); }
-    const tabs = [['mine', t('tabMine')], ['people', t('tabPeople') + ` <span class="tab-count tnum">${keys.length - waiting.length}/${keys.length}</span>`], ['order', t('tabOrder')], ['bill', t('tabBill')]];
+    const tabs = host ? [['mine', t('tabMine')], ['people', t('tabPeople') + ` <span class="tab-count tnum">${keys.length - waiting.length}/${keys.length}</span>`], ['order', t('tabOrder')], ['bill', t('tabBill')]]
+      : [['mine', t('tabMine')], ['bill', t('tabMyBill')]];   // the others' orders are the host's business
+    if (!tabs.some(([k]) => k === tab)) { S.route.tab = 'mine'; return viewCart(); }
     return `${head}
       <nav class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="tab${k === tab ? ' on' : ''}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</nav>
       <div class="tab-body">
@@ -762,7 +767,7 @@
         <p class="label">${esc(t('ownerControls'))}</p>
         <div class="btn-row">
           ${st === 'ordering' ? `<button class="secondary" data-act="extend">${esc(t('extend'))}</button><button class="danger-ghost" data-act="closeCart">${esc(t('closeNow'))}</button>` : ''}
-          ${st === 'closed' ? `<button class="secondary" data-act="reopen">${esc(t('reopen'))}</button>` : ''}
+          ${st === 'closed' || st === 'ordered' ? `<button class="secondary" data-act="reopen">${esc(t('reopen'))}</button>` : ''}
         </div>
         <p class="muted small-text">${esc(t('orderForHint'))}</p>
       </section>` : ''}
@@ -1378,7 +1383,7 @@
 
     extend: () => { const c = curCart(); patch(c, { closesAt: Math.max(Date.now(), c.closesAt) + 10 * 60000, stage: 'ordering' }); },
     closeCart: () => { const c = curCart(); patch(c, { closesAt: Math.min(c.closesAt, Date.now()) }); },
-    reopen: () => { const c = curCart(); patch(c, { stage: 'ordering', closesAt: Math.max(Date.now() + 15 * 60000, c.closesAt) }); },
+    reopen: () => { const c = curCart(); patch(c, { stage: 'ordering', closesAt: Math.max(Date.now() + 15 * 60000, c.closesAt) }); toast(t('reopened')); },
     markOrdered: async () => {
       const c = curCart();
       const p = { stage: 'ordered', closesAt: Math.min(c.closesAt, Date.now()) };
@@ -2448,14 +2453,16 @@
       un && un();
       if (!g) { S.pending.missing = true; return render(true); }
       if ((g.memberUids || []).includes(me())) { const cid = S.pending.cid; S.pending = null; setGroup(gid, true); if (cid) go('cart', { id: cid, tab: 'mine' }); else go('home'); return; }
-      S.pending.group = g; render(true);
+      S.pending.group = g;
+      if (S.profile && S.profile.name && !S.pending.joining) { S.pending.joining = true; joinPending(); }   // the link is the invitation: no extra step
+      render(true);
     }, () => { S.pending.missing = true; render(true); });
     render(true);
   }
   async function joinPending() {
     const { gid, cid } = S.pending;
     const ok = await guard(S.store.joinGroup(gid, { name: S.profile.name, phone: S.profile.phone, joinedAt: Date.now() }));
-    if (ok === null) return;
+    if (ok === null) { if (S.pending) S.pending.joining = false; render(true); return; }
     S.pending = null;
     setGroup(gid, true);
     if (cid) go('cart', { id: cid, tab: 'mine' }); else go('home');
