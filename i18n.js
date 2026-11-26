@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    payInstaNote2: 'المبلغ {a} بيتنسخ لوحده لما تدوس. في إنستاباي: دوس مطوّلاً على خانة المبلغ واختار «لصق»، وبعدها ادفع.', amountCopied: 'المبلغ {a} اتنسخ: الصقه في إنستاباي',
     csRound: 'التقريب لأقرب جنيه {a}.', csOld: 'والمطلوب فيه {a} حسابات قديمة من طلبات قبل كده.',
     collectTitle: 'كشف التحصيل', updateInvoice: 'حدّث الفاتورة', makeInvoice: 'اطلع الفاتورة', sendOne: 'ابعت', sendAgainOne: 'ابعت تاني',
     sentAt: 'اتبعتت {t}', notSent: 'لسه ما اتبعتتش', paidCheck: 'دفع', received: 'اتحوّل', shortBy: 'ناقص {a}', overBy: 'زيادة {a}',
@@ -201,6 +202,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    payInstaNote2: 'Tapping copies {a}. In InstaPay, long-press the amount box, choose Paste, then pay.', amountCopied: '{a} copied: paste it in InstaPay',
     csRound: 'Rounding {a}.', csOld: 'The amount due includes {a} from earlier orders.',
     collectTitle: 'Collection sheet', updateInvoice: 'Update invoice', makeInvoice: 'Make invoice', sendOne: 'Send', sendAgainOne: 'Send again',
     sentAt: 'sent {t}', notSent: 'not sent yet', paidCheck: 'Paid', received: 'Received', shortBy: '{a} short', overBy: '{a} extra',

@@ -1057,8 +1057,9 @@
   function payButtons(pi, amount) {
     pi = pi || {};
     const amt = C.fmtMoney(amount || 0);
-    return `${pi.instapayLink ? `<a class="insta-btn" href="${esc(pi.instapayLink)}" target="_blank" rel="noopener">💸 ${esc(t('payInsta', { a: money(amount || 0) }))}</a>
-        <p class="muted small-text insta-note">${esc(t('payInstaNote', { a: amt }))} <button class="link-btn" data-act="copy" data-text="${esc(amt)}">${esc(t('copyAmount'))}</button></p>` : ''}
+    // InstaPay links can't carry an amount, so the tap copies it: in InstaPay it is one long-press → Paste
+    return `${pi.instapayLink ? `<a class="insta-btn" href="${esc(pi.instapayLink)}" target="_blank" rel="noopener" data-act="payGo" data-keep="1" data-text="${esc(amt)}">💸 ${esc(t('payInsta', { a: money(amount || 0) }))}</a>
+        <p class="muted small-text insta-note">${esc(t('payInstaNote2', { a: amt }))}</p>` : ''}
       ${pi.instapay ? `<p class="pay-line"><span>InstaPay</span><code dir="ltr">${esc(pi.instapay)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.instapay)}">${esc(t('copy'))}</button></p>` : ''}
       ${pi.wallet ? `<p class="pay-line"><span>${esc(t('walletShort'))}</span><code dir="ltr">${esc(pi.wallet)}</code><button class="ghost small" data-act="copy" data-text="${esc(pi.wallet)}">${esc(t('copy'))}</button></p>` : ''}`;
   }
@@ -1308,6 +1309,7 @@
     openCart: el => go('cart', { id: el.dataset.id, tab: el.dataset.tab || 'mine' }),
     tab: el => { S.route.tab = el.dataset.tab; render(true); },
     copy: el => copyText(el.dataset.text),
+    payGo: el => { try { navigator.clipboard.writeText(el.dataset.text).catch(() => { }); } catch (e) { } toast(t('amountCopied', { a: el.dataset.text })); },
     switchGroup: el => setGroup(el.dataset.id),
     joinGroup: () => joinPending(),
 
