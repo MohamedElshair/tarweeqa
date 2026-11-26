@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    logoAdd: '📷 ارفع لوجو المطعم', logoChange: 'غيّر اللوجو', logoRemove: 'شيل اللوجو', logoHint: 'صورة مربعة أو سكرين شوت للوجو. هيظهر في الطلبات وقائمة المطاعم. متنساش تدوس «حفظ».', logoReady: 'اللوجو جاهز. دوس «حفظ».', logoFail: 'ماقدرتش أقرا الصورة دي. جرّب صورة تانية.',
     payCarried: '{a} اترحّلت على فاتورة {when}', stCarried: 'اترحّل على الفاتورة اللي بعدها',
     changeNumber: 'غيّر الرقم', newHere: 'الرقم ده جديد علينا. اكتب اسمك واختار رقم سري، وخلاص.', pinChoose: 'اختار رقم سري (4 لـ 6 أرقام)',
     phoneOnlyHint: 'لو دخلت قبل كده هنطلب منك الرقم السري بس.', continueBtn: 'كمّل',
@@ -261,6 +262,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    logoAdd: '📷 Upload restaurant logo', logoChange: 'Change logo', logoRemove: 'Remove logo', logoHint: 'A square picture or a screenshot of the logo. It shows on orders and the restaurant list. Remember to tap “Save”.', logoReady: 'Logo ready. Tap “Save”.', logoFail: 'Couldn’t read that picture. Try another one.',
     payCarried: '{a} moved to the {when} bill', stCarried: 'Moved to the next bill',
     changeNumber: 'Change', newHere: 'This number is new to us. Type your name and choose a PIN, that’s it.', pinChoose: 'Choose a PIN (4 to 6 digits)',
     phoneOnlyHint: 'If you have used Tarweeqa before, we will only ask for your PIN.', continueBtn: 'Continue',

@@ -132,6 +132,15 @@
     if (k !== _pairsKey) { _pairs = C.balances(S.carts); _pairsKey = k; }
     return _pairs;
   }
+  // restaurant logo (small picture kept with the restaurant); falls back to the first letter
+  function logoOf(x) {
+    if (!x) return '';
+    if (x.logo) return x.logo;
+    if (x.restaurant && x.restaurant.logo) return x.restaurant.logo;
+    const r = x.restaurantId && S.restaurants.find(y => y.id === x.restaurantId);
+    return (r && r.logo) || '';
+  }
+  const restLogo = (x, name, cls) => { const l = logoOf(x); return `<span class="rlogo${cls ? ' ' + cls : ''}" aria-hidden="true">${l ? `<img src="${esc(l)}" alt="">` : esc(initial(name || ''))}</span>`; };
   function prevFor(c) { return C.prevFor(S.carts, c); }
   // the bill of one order, with old debts added and debts already moved to a later bill marked as carried
   function billFor(c) { return C.computeBill(c, prevFor(c), { carried: C.carriedKeys(S.carts, c) }); }
@@ -406,7 +415,7 @@
     const est = st === 'ordering' && mine !== 'out' ? C.estimateFor(c, me()) : null;
     return `<button class="active-card state-${st}" data-act="openCart" data-id="${esc(c.id)}">
       <span class="ac-top">${statusChip(st)}<span class="tnum clock-sm">${st === 'voting' || st === 'ordering' ? `<span data-countdown="${c.closesAt}"></span>` : ''}</span></span>
-      <strong class="ac-title">${esc(title)}</strong>
+      <strong class="ac-title">${st !== 'voting' ? restLogo(c, c.restaurant.name, 'sm') : ''}${esc(title)}</strong>
       <small class="muted">${esc(c.title || '')}${c.title ? ' · ' : ''}${esc(t('host'))}: ${esc(c.ownerId === me() ? t('you') : c.ownerName)}</small>
       <span class="ac-stats tnum">${esc(sub)}</span>
       ${st !== 'voting' ? `<span class="ac-me">${personChip(mine)}${est && est.total ? `<span class="tnum">${esc(t('yourEstimate'))} ≈ <b>${esc(money(est.total))}</b></span>` : ''}</span>` : ''}
@@ -499,7 +508,7 @@
             const f = r.fees || {};
             return `<label class="pick${on ? ' on' : ''}" data-name="${esc(r.name.toLowerCase())}"${q && !r.name.toLowerCase().includes(q) ? ' hidden' : ''}>
               <input type="checkbox" data-change="pickRest" value="${esc(r.id)}" ${on ? 'checked' : ''}>
-              <span class="pick-main"><strong>${esc(r.name)} ${distChip(r)}</strong>
+              ${restLogo(r, r.name)}<span class="pick-main"><strong>${esc(r.name)} ${distChip(r)}</strong>
                 <small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))} · ${esc(t('lastOrdered'))}: ${esc(fmtAgo(r.lastOrderedAt))}${f.delivery ? ' · ' + esc(t('delivery')) + ' ' + esc(C.fmtMoney(f.delivery)) : ''}</small></span>
               ${on && n > 1 ? `<span class="pick-n tnum">${S.sel.indexOf(r.id) + 1}</span>` : ''}
             </label>`;
@@ -551,7 +560,7 @@
       <section class="cart-head">
         <div class="ch-title">
           <p class="eyebrow">${esc(c.title || fmtDate(c.createdAt))}</p>
-          <h1>${esc(st === 'voting' ? t('votingTitle') : c.restaurant.name)}</h1>
+          <h1 class="ch-name">${st !== 'voting' ? restLogo(c, c.restaurant.name) : ''}${esc(st === 'voting' ? t('votingTitle') : c.restaurant.name)}</h1>
           <p class="muted">${esc(t('host'))}: ${esc(c.ownerId === me() ? t('you') : c.ownerName)}</p>
         </div>
         <div class="ch-status">
@@ -1319,7 +1328,7 @@
       ${deliveryPanel()}
       ${list.length > 5 ? `<input type="search" id="rest-search2" data-input="restSearch" placeholder="${esc(t('searchRest'))}" value="${esc(S.restQuery)}">` : ''}
       ${list.length ? `<ul class="rest-list">${list.map(r => `<li class="pick-wrap" data-name="${esc(r.name.toLowerCase())}"${q && !r.name.toLowerCase().includes(q) ? ' hidden' : ''}><button class="row-link" data-act="editRestaurant" data-id="${esc(r.id)}">
-        <span><strong>${esc(r.name)}</strong><small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))} · ${esc(t('lastOrdered'))}: ${esc(fmtAgo(r.lastOrderedAt))}</small></span><span class="rl-side">${distChip(r)}<span class="chev" aria-hidden="true">›</span></span></button></li>`).join('')}</ul>`
+        ${restLogo(r, r.name)}<span class="rl-main"><strong>${esc(r.name)}</strong><small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))} · ${esc(t('lastOrdered'))}: ${esc(fmtAgo(r.lastOrderedAt))}</small></span><span class="rl-side">${distChip(r)}<span class="chev" aria-hidden="true">›</span></span></button></li>`).join('')}</ul>`
         : `<p class="empty">${esc(t('noRestaurants'))}</p>`}`;
   }
 
@@ -1331,6 +1340,14 @@
     return `${back(S.route.from || 'restaurants')}
       <h1>${esc(d.id ? d.name || t('navRestaurants') : t('newRestaurant'))}</h1>
       <section class="panel form">
+        <div class="logo-edit">
+          ${restLogo(d, d.name, 'lg')}
+          <div class="logo-btns">
+            <label class="secondary small file-btn"><input type="file" accept="image/*" data-change="logo">${esc(d.logo ? t('logoChange') : t('logoAdd'))}</label>
+            ${d.logo ? `<button class="ghost small" data-act="logoRemove">${esc(t('logoRemove'))}</button>` : ''}
+            <small class="muted">${esc(t('logoHint'))}</small>
+          </div>
+        </div>
         <label class="field"><span>${esc(t('restName'))}</span><input id="r-name" data-draft="name" value="${esc(d.name)}"></label>
         <div class="grid2">
           <label class="field"><span>${esc(t('restPhone'))}</span><input id="r-phone" data-draft="phone" type="tel" dir="ltr" value="${esc(d.phone)}"></label>
@@ -1579,7 +1596,7 @@
     return `<div class="section-head"><h2>${esc(t('navRestaurants'))} <small class="muted">· ${esc(S.group.name)}</small></h2><button class="primary small" data-act="admNewRest">${plusIcon()} ${esc(t('addRestaurant'))}</button></div>
       ${S.groups.length > 1 ? `<div class="seg small">${S.groups.map(g => `<button class="${g.id === S.gid ? 'on' : ''}" data-act="admGroup" data-id="${esc(g.id)}">${esc(g.name)}</button>`).join('')}</div>` : ''}
       ${list.length ? `<ul class="rest-list">${list.map(r => `<li><button class="row-link" data-act="editRestaurant" data-id="${esc(r.id)}">
-        <span><strong>${esc(r.name)}</strong><small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))} · ${esc(t('lastOrdered'))}: ${esc(fmtAgo(r.lastOrderedAt))}</small></span><span class="chev" aria-hidden="true">›</span></button></li>`).join('')}</ul>`
+        ${restLogo(r, r.name)}<span class="rl-main"><strong>${esc(r.name)}</strong><small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))} · ${esc(t('lastOrdered'))}: ${esc(fmtAgo(r.lastOrderedAt))}</small></span><span class="chev" aria-hidden="true">›</span></button></li>`).join('')}</ul>`
         : `<p class="empty">${esc(t('noRestaurants'))}</p>`}
       <p class="muted small-text">${esc(t('admRestHint'))}</p>`;
   }
@@ -1732,7 +1749,7 @@
   function snapshotOf(r) {
     return {
       restaurantId: r.id,
-      restaurant: { name: r.name, phone: r.phone || '', talabatUrl: r.talabatUrl || '' },
+      restaurant: { name: r.name, phone: r.phone || '', talabatUrl: r.talabatUrl || '', logo: r.logo || '' },
       menu: (r.items || []).map(i => ({ id: i.id, name: i.name, price: i.price, category: i.category || '' })),
       estimate: Object.assign({ delivery: 0, service: 0, taxPct: 0, tip: 0 }, r.fees || {})
     };
@@ -1771,6 +1788,7 @@
       if (h.gid !== S.gid) setGroup(h.gid, true);
       go('cart', { id: h.cid, tab: 'mine' });
     },
+    logoRemove: () => { if (!S.draft) return; syncDraft(); S.draft.logo = ''; render(true); },
     admTab: el => { S.adm.tab = el.dataset.tab; S.confirmKey = null; render(true); },
     admReload: () => loadAdmin(),
     admCloseCode: () => { S.adm.code = null; render(true); },
@@ -2566,6 +2584,18 @@
     return { updated, added, older, unsure };
   }
   // one light JPEG of the screenshot(s), stacked, to keep with the receipt
+  // logo: square, 160px, centred crop, small JPEG kept with the restaurant (~10 KB)
+  async function logoImage(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const S0 = 160, side = Math.min(img.naturalWidth, img.naturalHeight);
+      const c = document.createElement('canvas'); c.width = S0; c.height = S0;
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, S0, S0);
+      x.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, S0, S0);
+      return c.toDataURL('image/jpeg', 0.82);
+    } finally { setTimeout(() => URL.revokeObjectURL(url), 2000); }
+  }
   async function shrinkImages(files, maxW = 720, q = 0.62) {
     const imgs = [];
     for (const f of files) {
@@ -2997,6 +3027,11 @@
     payInfo: el => patch(curCart(), { ['payInfo.' + el.dataset.k]: el.value.trim() }),
     payInfoInsta: el => { const v = splitInsta(el.value); patch(curCart(), { 'payInfo.instapay': v.instapay, 'payInfo.instapayLink': v.instapayLink }); },
     shots: el => readScreenshots(Array.from(el.files || [])),
+    logo: async el => {
+      const f = el.files && el.files[0]; if (!f || !S.draft) return;
+      try { syncDraft(); S.draft.logo = await logoImage(f); render(true); toast(t('logoReady')); }
+      catch (e) { console.warn(e); toast(t('logoFail'), 'warn'); }
+    },
     receipt: el => readReceipt(Array.from(el.files || [])),
     rcMap: el => { S.rcpt.map[el.dataset.k] = +el.value; render(true); },
     rcFee: el => { S.rcpt.fees[+el.dataset.i] = el.checked; render(true); },

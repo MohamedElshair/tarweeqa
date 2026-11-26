@@ -60,6 +60,32 @@
     const words = s.split(/\s+/).length;
     return /[.!،,]$/.test(s) || words > 6 || s.length > 38;
   }
+  /* screenshots (Talabat app): screen furniture that is never a menu item */
+  const OCR_NOISE = /(طلب جماعي|طلب جماعى|أضف منتجات|اضف منتجات|لتبدأ الطلب|لتبدا الطلب|الحد الأدنى|الحد الادنى|رسوم التوصيل|التوصيل خلال|توصيل مجاني|عرض السلة|اعرض السلة|ابحث في|ابحث عن|تقييم|مراجعات|دقيقة|دقائق|مفتوح الآن|مغلق|الأكثر طلب|الاكثر طلب|sponsored|min\.? ?order|delivery fee|view (basket|cart)|group order|add items worth|to start your order|talabat|طلبات برو|talabat pro)/i;
+  const letterCount = s => (String(s).match(/[\p{L}]/gu) || []).length;
+  // a line from a screenshot worth reading: enough letters, not mostly symbols and digits (status bar, icons)
+  function ocrUseful(line) {
+    const n = letterCount(line);
+    return n >= 4 && n / Math.max(1, line.replace(/\s/g, '').length) >= 0.6;
+  }
+  /* tidy a name read from a screenshot: drop symbols, digits and the 1–2 letter crumbs OCR leaves at the ends */
+  function cleanOcrName(s) {
+    let w = String(s || '').replace(/[<>«»*|_=~^\[\]{}()"'`؛;:!?؟،,…]+/g, ' ').replace(/\d+(?:[.,]\d+)?/g, ' ')
+      .replace(/\.+/g, ' ').split(/\s+/).filter(Boolean);
+    while (w.length > 2 && letterCount(w[w.length - 1]) <= 2) w.pop();
+    while (w.length > 2 && letterCount(w[0]) <= 1) w.shift();
+    const name = w.join(' ').trim();
+    return w.some(x => letterCount(x) >= 3) && letterCount(name) >= 4 ? name : '';
+  }
+  // the gray line under an item name: ends with a full stop or "and…", has a full stop inside, is long, or repeats the name and adds to it
+  function ocrDescription(line, before) {
+    if (looksLikeDescription(line) || /\.\s*\S/.test(line) || /\s(و|او|أو|مع|ب)$/.test(line)) return true;
+    if (!before) return false;
+    const A = new Set(normName(before).split(' ').filter(x => x.length > 2));
+    const shared = normName(line).split(' ').filter(x => A.has(x)).length;
+    return shared >= 2 && line.length > before.length;
+  }
+
   function cleanName(s) {
     return s.replace(/^[\s\-–—:|,=•*.]+|[\s\-–—:|,=•*.]+$/g, '').trim();
   }
@@ -110,6 +136,18 @@
       const lines = buf.filter((l, i) => i === 0 || l !== buf[i - 1]);
       buf = [];
       if (!lines.length) return;
+      if (opts.ocr) {
+        // Talabat card: [section title] / name / description / price. Drop the description, keep the name.
+        const keep = lines.slice();
+        while (keep.length > 1 && ocrDescription(keep[keep.length - 1], keep[keep.length - 2])) keep.pop();
+        if (keep.length === 1 && looksLikeDescription(keep[0]) && lines.length === 1) { skipped.push(lines[0]); return; }
+        const nm = cleanOcrName(keep[keep.length - 1]);
+        if (keep.length >= 2 && keep[0].length <= 30) { const c = cleanOcrName(keep[keep.length - 2]); if (c && similarity(c, nm) < 0.5) category = c; }
+        if (!nm) return;
+        if (price > 0) items.push({ name: nm, price: round2(price), category });
+        else skipped.push(nm);
+        return;
+      }
       let name, cat = null;
       if (lines.length === 1) name = lines[0];
       else {
@@ -130,12 +168,16 @@
     };
 
     let lines = String(text || '').replace(/[\u200e\u200f\u202a-\u202e]/g, '').split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim());
-    if (opts.ocr) lines = joinWrapped(lines.filter(Boolean));
+    // screenshots: drop screen furniture first, and the stray comma OCR leaves at line ends.
+    // Wrapped description lines are not joined: each one is recognised as description on its own.
+    if (opts.ocr) lines = lines.filter(l => l && !OCR_NOISE.test(l)).map(l => l.replace(/[\s،,]+$/, ''));
     for (const line of lines) {
       if (!line) continue;
       const latin = latinDigits(line);
       if (/^#/.test(line)) { buf = []; category = cleanName(line.replace(/^#+/, '').replace(/[\u{1F300}-\u{1FAFF}\u2B50]/gu, '')); continue; }
       if (NOISE.test(latin)) continue;
+      if (opts.ocr && OCR_NOISE.test(line)) { buf = []; continue; }
+      if (opts.ocr && !isPriceLine(latin) && !ocrUseful(line)) continue;
       if (NO_PRICE.test(line)) { flushAs(0); continue; }
       if (/[:：]$/.test(line) && !/\d/.test(latin)) { buf = []; category = cleanName(line.replace(/[:：]$/, '')); continue; }
       if (isPriceLine(latin)) { flushAs(currencyPrice(latin)); continue; }
@@ -144,8 +186,13 @@
       const m = latin.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:egp|le|ج\.?\s?م\.?|جنيه|جنية)?\.?\s*$/i);
       const hasCur = HAS_CUR.test(latin.slice(m ? m.index : 0));
       if (m && (!opts.ocr || hasCur) && /[^\d\s.,\-–—:|=•*]/.test(latin.slice(0, m.index))) {
+        const rawName = line.slice(0, m.index).replace(new RegExp(CUR + '\\s*$', 'i'), '');
+        if (opts.ocr && (!cleanOcrName(rawName) || (buf.length && ocrDescription(rawName, buf[buf.length - 1])))) {
+          if (cleanOcrName(rawName)) buf.push(rawName);   // the description sits on the price's row: the name is above
+          flushAs(num(m[1].replace(',', '.'))); continue;  // crumbs next to the price: the name is above
+        }
         if (buf.length) { skipped.push(...buf.filter(b => !looksLikeDescription(b)).slice(-1)); buf = []; }
-        const name = cleanName(line.slice(0, m.index).replace(new RegExp(CUR + '\\s*$', 'i'), ''));
+        const name = opts.ocr ? cleanOcrName(rawName) : cleanName(rawName);
         const price = num(m[1].replace(',', '.'));
         if (name && price > 0) items.push({ name, price: round2(price), category });
         else skipped.push(line);

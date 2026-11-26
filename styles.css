@@ -700,3 +700,17 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .section-head h1 .ico { width: 24px; height: 24px; color: var(--accent); }
 .prev-item dt, .prev-item dd { font-size: .82rem; color: var(--muted); font-weight: 500; }
 .prev-item dt { padding-inline-start: 10px; }
+
+/* restaurant logo */
+.rlogo { flex: none; width: 40px; height: 40px; border-radius: 12px; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-family: var(--f-display); border: 1px solid var(--line); }
+.rlogo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rlogo.sm { width: 28px; height: 28px; border-radius: 8px; font-size: .85rem; margin-inline-end: 8px; vertical-align: middle; }
+.rlogo.lg { width: 84px; height: 84px; border-radius: 20px; font-size: 1.8rem; }
+.logo-edit { display: flex; align-items: center; gap: 14px; }
+.logo-btns { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; flex: 1; min-width: 0; }
+.rest-list .row-link { gap: 12px; }
+.rl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pick > .rlogo { margin-inline-end: 4px; }
+.ac-title { display: flex; align-items: center; }
+.ch-name { display: flex; align-items: center; gap: 10px; }
+.ch-name .rlogo { width: 44px; height: 44px; }
