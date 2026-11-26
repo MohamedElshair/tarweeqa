@@ -1374,6 +1374,49 @@
         : `<p class="empty">${esc(t('noRestaurants'))}</p>`}`;
   }
 
+  // one menu item in the editor: a tidy row, the open edit form, or a tick box while choosing several
+  function catSelect(cats, cur, attrs) {
+    return `<select class="ei-cat" ${attrs}>${cats.filter(x => x.name).map(x => `<option value="${esc(x.name)}"${x.name === (cur || '') ? ' selected' : ''}>${esc(catEmoji(x.name) + ' ' + x.name)}</option>`).join('')}<option value=""${!(cur || '') ? ' selected' : ''}>${esc(t('otherCat'))}</option><option value="__new">＋ ${esc(t('newCat'))}</option></select>`;
+  }
+  function edItem(it, cats, d) {
+    if (S.editItem === it.id && !S.pickMode) return `<li class="ed-open${it.fresh ? ' fresh' : ''}" data-item="${esc(it.id)}">
+      <label class="field"><span>${esc(t('itemName'))}</span><textarea class="ei-name" id="ei-n-${esc(it.id)}" data-change="itemName" data-id="${esc(it.id)}" rows="${Math.max(1, Math.ceil(it.name.length / 30))}">${esc(it.name)}</textarea></label>
+      <div class="grid2">
+        <label class="field"><span>${esc(t('price'))}</span><input class="ei-price tnum" id="ei-p-${esc(it.id)}" data-change="itemPrice" data-id="${esc(it.id)}" inputmode="decimal" value="${esc(it.price)}"></label>
+        <label class="field"><span>${esc(t('category'))}</span>${catSelect(cats, it.category, `data-change="itemCat" data-id="${esc(it.id)}"`)}</label>
+      </div>
+      <div class="btn-row">
+        <button class="primary small" data-act="editItemDone">✓ ${esc(t('done'))}</button>
+        <button class="danger-ghost small" data-act="draftDelItem" data-id="${esc(it.id)}">${esc(t('delete'))}</button>
+      </div>
+    </li>`;
+    const on = S.pickMode && S.picked.has(it.id);
+    return `<li class="ed-row${it.fresh ? ' fresh' : ''}${on ? ' picked' : ''}" data-item="${esc(it.id)}"><button class="ed-sum" data-act="${S.pickMode ? 'pickItem' : 'editItem'}" data-id="${esc(it.id)}"${S.pickMode ? ` aria-pressed="${on}"` : ''}>
+      ${S.pickMode ? `<span class="ed-tick" aria-hidden="true">${on ? '✓' : ''}</span>` : ''}
+      <span class="ed-name">${esc(it.name)}${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : moveTag(d.name, it.name, C.num(it.price), true)}</span>
+      <span class="ed-price tnum">${esc(C.fmtMoney(it.price))}</span>${S.pickMode ? '' : '<span class="ed-pen" aria-hidden="true">✎</span>'}
+    </button></li>`;
+  }
+  // swap one item's row in place, without drawing the whole page again (fast with long menus)
+  function redrawItem(id) {
+    const li = document.querySelector(`.edit-items li[data-item="${CSS.escape(id)}"]`);
+    const it = S.draft && S.draft.items.find(i => i.id === id);
+    if (!li || !it) return false;
+    const tmp = document.createElement('ul'); tmp.innerHTML = edItem(it, groupByCategory(S.draft.items), S.draft);
+    li.replaceWith(tmp.firstElementChild);
+    return true;
+  }
+  function pickBar() {
+    if (!S.pickMode || !S.draft) return '';
+    const n = S.picked.size, cats = groupByCategory(S.draft.items);
+    return `<div class="pick-bar" role="region" aria-label="${esc(t('pickSome'))}">
+      <span class="tnum pb-n">${esc(t('pickedN', { n }))}</span>
+      ${catSelect(cats, '__none', `id="pick-cat" aria-label="${esc(t('moveTo'))}"`).replace('<select', `<select${n ? '' : ' disabled'}`).replace('>', `><option value="__none" selected disabled>${esc(t('moveTo'))}</option>`)}
+      <button class="primary small" data-act="pickMove"${n ? '' : ' disabled'}>${esc(t('moveBtn'))}</button>
+      <button class="ghost small" data-act="pickDelete"${n ? '' : ' disabled'}>${esc(S.confirmKey === 'pickDel' ? t('confirmAgain') : '🗑')}</button>
+      <button class="ghost small" data-act="pickDone">${esc(t('cancel'))}</button>
+    </div>`;
+  }
   function viewRestaurantEdit() {
     const d = S.draft;
     if (!d) return viewRestaurants();
@@ -1448,24 +1491,12 @@
         <div class="section-head"><h2>${esc(t('menu'))} <small class="muted">${esc(t('itemsCount', { n: d.items.length }))}</small></h2>
           ${d.items.length && S.history[d.name] ? movesSummary(d) : ''}
           ${d.items.length ? `<button class="ghost small" data-act="clearMenu">${esc(S.confirmKey === 'clearMenu' ? t('confirmAgain') : t('clearMenu'))}</button>` : ''}</div>
-        ${d.items.length ? `<div class="sort-bar"><button class="secondary small" data-act="autoSortMenu">🗂 ${esc(S.confirmKey === 'autoSort' ? t('confirmAgain') : t('autoSort'))}</button><small class="muted">${esc(t('autoSortHint'))}</small></div>` : ''}
+        ${d.items.length ? `<div class="sort-bar"><div class="btn-row tight"><button class="secondary small" data-act="autoSortMenu">🗂 ${esc(S.confirmKey === 'autoSort' ? t('confirmAgain') : t('autoSort'))}</button><button class="${S.pickMode ? 'primary' : 'secondary'} small" data-act="pickStart">☑️ ${esc(t('pickSome'))}</button></div><small class="muted">${esc(t('autoSortHint'))}</small></div>` : ''}
         ${catTabs(cats, 'ec')}
+        ${pickBar()}
         ${d.items.length ? cats.map((g, gi) => `<div class="menu-group" id="ec-${gi}">
             ${g.name || g.other ? catHead(g, g.name ? `<button class="ghost small cat-rename" data-act="renameCat" data-cat="${esc(g.name)}">✎</button>` : '') : ''}
-            <ul class="edit-items">${g.items.map(it => S.editItem === it.id ? `<li class="ed-open${it.fresh ? ' fresh' : ''}">
-              <label class="field"><span>${esc(t('itemName'))}</span><textarea class="ei-name" id="ei-n-${esc(it.id)}" data-change="itemName" data-id="${esc(it.id)}" rows="${Math.max(1, Math.ceil(it.name.length / 30))}">${esc(it.name)}</textarea></label>
-              <div class="grid2">
-                <label class="field"><span>${esc(t('price'))}</span><input class="ei-price tnum" id="ei-p-${esc(it.id)}" data-change="itemPrice" data-id="${esc(it.id)}" inputmode="decimal" value="${esc(it.price)}"></label>
-                <label class="field"><span>${esc(t('category'))}</span><select class="ei-cat" data-change="itemCat" data-id="${esc(it.id)}">${cats.filter(x => x.name).map(x => `<option value="${esc(x.name)}"${x.name === (it.category || '') ? ' selected' : ''}>${esc(catEmoji(x.name) + ' ' + x.name)}</option>`).join('')}<option value=""${!(it.category || '') ? ' selected' : ''}>${esc(t('otherCat'))}</option><option value="__new">＋ ${esc(t('newCat'))}</option></select></label>
-              </div>
-              <div class="btn-row">
-                <button class="primary small" data-act="editItemDone">✓ ${esc(t('done'))}</button>
-                <button class="danger-ghost small" data-act="draftDelItem" data-id="${esc(it.id)}">${esc(t('delete'))}</button>
-              </div>
-            </li>` : `<li class="ed-row${it.fresh ? ' fresh' : ''}"><button class="ed-sum" data-act="editItem" data-id="${esc(it.id)}">
-              <span class="ed-name">${esc(it.name)}${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : moveTag(d.name, it.name, C.num(it.price), true)}</span>
-              <span class="ed-price tnum">${esc(C.fmtMoney(it.price))}</span><span class="ed-pen" aria-hidden="true">✎</span>
-            </li>`).join('')}</ul></div>`).join('') : `<p class="empty">${esc(t('menuEmpty'))}</p>`}
+            <ul class="edit-items">${g.items.map(it => edItem(it, cats, d)).join('')}</ul></div>`).join('') : `<p class="empty">${esc(t('menuEmpty'))}</p>`}
         <form class="panel form add-item" data-submit="draftAddItem" novalidate>
           <div class="grid3">
             <label class="field"><span>${esc(t('itemName'))}</span><input id="ai-name" name="name"></label>
@@ -1846,8 +1877,36 @@
       if (h.gid !== S.gid) setGroup(h.gid, true);
       go('cart', { id: h.cid, tab: 'mine' });
     },
-    editItem: el => { syncDraft(); S.editItem = el.dataset.id; render(true); const f = $('#ei-n-' + el.dataset.id); if (f) f.focus(); },
-    editItemDone: () => { syncDraft(); S.editItem = null; render(true); },
+    editItem: el => {
+      syncDraft();
+      const prev = S.editItem; S.editItem = el.dataset.id;
+      if (!(redrawItem(el.dataset.id) && (!prev || prev === el.dataset.id || redrawItem(prev)))) render(true);
+    },
+    editItemDone: () => { syncDraft(); const prev = S.editItem; S.editItem = null; if (!prev || !redrawItem(prev)) render(true); },
+    pickStart: () => { syncDraft(); S.pickMode = !S.pickMode; S.picked = new Set(); S.editItem = null; S.confirmKey = null; render(true); },
+    pickDone: () => { S.pickMode = false; S.picked = new Set(); render(true); },
+    pickItem: el => {
+      const id = el.dataset.id;
+      if (S.picked.has(id)) S.picked.delete(id); else S.picked.add(id);
+      redrawItem(id);
+      const bar = document.querySelector('.pick-bar'); if (bar) { const tmp = document.createElement('div'); tmp.innerHTML = pickBar(); bar.replaceWith(tmp.firstElementChild); }
+    },
+    pickMove: () => {
+      let v = ($('#pick-cat') || {}).value;
+      if (v == null || v === '__none') return toast(t('moveTo'), 'warn');
+      if (v === '__new') { v = (window.prompt(t('newCatPrompt')) || '').trim(); if (!v) return; }
+      const n = S.picked.size;
+      for (const it of S.draft.items) if (S.picked.has(it.id)) it.category = v;
+      S.draft.items = groupByCategory(S.draft.items).flatMap(g => g.items);
+      S.pickMode = false; S.picked = new Set(); render(true);
+      toast(t('movedN', { n, c: v || t('otherCat') }));
+    },
+    pickDelete: () => {
+      if (S.confirmKey !== 'pickDel') { S.confirmKey = 'pickDel'; const bar = document.querySelector('.pick-bar'); if (bar) { const tmp = document.createElement('div'); tmp.innerHTML = pickBar(); bar.replaceWith(tmp.firstElementChild); } return; }
+      S.confirmKey = null; const n = S.picked.size;
+      S.draft.items = S.draft.items.filter(i => !S.picked.has(i.id));
+      S.pickMode = false; S.picked = new Set(); render(true); toast(t('deletedN', { n }));
+    },
     jumpCat: el => { document.querySelectorAll('.cat-tabs .chip-btn').forEach(b => b.classList.toggle('on', b === el)); el.scrollIntoView({ block: 'nearest', inline: 'center' }); const g = document.getElementById(el.dataset.target); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
     autoSortMenu: () => {
       if (S.confirmKey !== 'autoSort') { syncDraft(); S.confirmKey = 'autoSort'; return render(true); }
@@ -2868,7 +2927,19 @@
     return S.history[restName];
   }
   // the price before the current one, from the restaurant's history
+  const pmCache = { ver: '', map: new Map() };
   function priceMove(restName, itemName, price) {
+    const hist = S.history[restName] || [];
+    const items = (S.draft && S.draft.name === restName ? S.draft.items : null) || (S.restaurants.find(r => r.name === restName) || {}).items || [];
+    const ver = restName + '|' + hist.length + '|' + (hist.length ? hist[hist.length - 1].at : 0) + '|' + items.length;
+    if (pmCache.ver !== ver) { pmCache.ver = ver; pmCache.map.clear(); }
+    const key = itemName + '|' + price;
+    if (pmCache.map.has(key)) return pmCache.map.get(key);
+    const r = priceMove0(restName, itemName, price);
+    pmCache.map.set(key, r);
+    return r;
+  }
+  function priceMove0(restName, itemName, price) {
     const rows = (S.history[restName] || []).filter(r => histIs(restName, r.item, itemName));
     if (!rows.length) return null;
     const same = r => Math.abs(C.num(r.price) - price) < 0.005;

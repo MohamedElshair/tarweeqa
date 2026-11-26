@@ -793,3 +793,12 @@ html, body { overflow-x: clip; }
 .chip-btn { max-width: 70vw; overflow: hidden; text-overflow: ellipsis; }
 .page h1, .page h2, .page h3, .ed-name, .dish-name, .row-link strong, .pr-main strong { overflow-wrap: anywhere; }
 .page img, .page select, .page input, .page textarea { max-width: 100%; }
+
+/* choose several items */
+.ed-tick { flex: none; width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--line); display: grid; place-items: center; font-weight: 800; color: var(--accent-ink); }
+.ed-row.picked .ed-sum { border-color: var(--accent); background: var(--accent-soft); }
+.ed-row.picked .ed-tick { background: var(--accent); border-color: var(--accent); }
+.pick-bar { position: fixed; inset-inline: 10px; bottom: calc(env(safe-area-inset-bottom, 0px) + 74px); z-index: 30; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface); border: 1.5px solid var(--accent); border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.18); max-width: 620px; margin-inline: auto; }
+.pick-bar .pb-n { font-weight: 700; }
+.pick-bar select { flex: 1 1 140px; min-width: 0; min-height: 38px; margin: 0; }
+.sort-bar .btn-row { flex-wrap: wrap; }
