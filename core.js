@@ -391,7 +391,8 @@
      person = all of it on one person (falls back to equal if that person did not order) */
   const DEFAULT_SPLIT = { delivery: 'equal', service: 'share', tax: 'share', tip: 'equal', shortage: 'equal', discount: 'share', other: 'equal' };
 
-  function computeBill(cart, prevBalances) {
+  function computeBill(cart, prevBalances, opts) {
+    const carried = (opts && opts.carried) || null;
     cart = withShared(cart);
     const ms = cart.members || {};
     const charges = (cart.charges || []).filter(c => num(c.amount) !== 0);
@@ -459,6 +460,10 @@
       r.reported = p && p.status === 'reported' ? round2(num(p.amount)) : 0;
       r.remaining = round2(Math.max(0, r.net - r.paid));
       r.state = !p ? 'unpaid' : p.status === 'reported' ? 'reported' : (r.paid + 0.001 >= r.net ? 'paid' : 'partial');
+      // still owed here, but a later order's bill already carries it: collect it there, not here
+      if (carried && carried.has(r.key) && (r.state === 'unpaid' || r.state === 'partial') && r.remaining > 0.009) {
+        r.carriedOwed = r.remaining; r.carriedTo = carried.get ? carried.get(r.key) : null; r.state = 'carried'; r.remaining = 0;
+      }
     }
     const collected = round2(rows.reduce((s, r) => s + r.total, 0));
     const paidSum = round2(rows.reduce((s, r) => s + r.paid, 0));
@@ -497,6 +502,35 @@
     const out = {};
     const mine = pairs[cart.ownerId] || {};
     for (const k of Object.keys(mine)) out[k] = mine[k].balance;
+    return out;
+  }
+
+  /* Unpaid amounts from this host's earlier orders, one line per order, for the bill of `cart`:
+     { personKey: [{ id, rest, at, due }] }. Their sum is what the bill adds as "owed from earlier orders". */
+  function prevDetail(carts, cart) {
+    const pairs = balances(carts, { excludeId: cart.id, before: cart.createdAt });
+    const mine = pairs[cart.ownerId] || {};
+    const out = {};
+    for (const k of Object.keys(mine)) {
+      if (mine[k].balance > -0.009) continue;
+      // walk the orders newest first and keep the unpaid ones until they explain the whole debt
+      let left = round2(-mine[k].balance); const list = [];
+      for (const x of mine[k].carts.slice().reverse()) {
+        if (left <= 0.009) break;
+        const due = round2(Math.min(left, Math.max(0, x.total - x.paid)));
+        if (due > 0.009) { list.unshift({ id: x.id, rest: x.rest || '', at: x.at, due }); left = round2(left - due); }
+      }
+      out[k] = list;
+    }
+    return out;
+  }
+  /* People whose unpaid share of `cart` was moved onto a later bill of the same host: Map key → later cart id */
+  function carriedKeys(carts, cart) {
+    const out = new Map();
+    for (const c of carts || []) {
+      if (c.id === cart.id || c.ownerId !== cart.ownerId || !(c.stage === 'ordered' || c.stage === 'settled') || !(c.createdAt > cart.createdAt)) continue;
+      for (const k of eaters(c)) if (k !== cart.ownerId && !out.has(k)) out.set(k, c.id);
+    }
     return out;
   }
 
@@ -559,7 +593,7 @@
     return { km: round2(km), limit, state: km <= limit ? 'near' : 'far' };
   }
 
-  const api = { distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, computeBill, balances, prevFor, aggregate, tallyVotes, DEFAULT_SPLIT };
+  const api = { distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TarweeqaCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -698,3 +698,5 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .adm-body > * + * { margin-top: 14px; }
 .section-head h1 { display: flex; align-items: center; gap: 8px; margin: 0; }
 .section-head h1 .ico { width: 24px; height: 24px; color: var(--accent); }
+.prev-item dt, .prev-item dd { font-size: .82rem; color: var(--muted); font-weight: 500; }
+.prev-item dt { padding-inline-start: 10px; }

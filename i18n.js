@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    payCarried: '{a} اترحّلت على فاتورة {when}', stCarried: 'اترحّل على الفاتورة اللي بعدها',
     changeNumber: 'غيّر الرقم', newHere: 'الرقم ده جديد علينا. اكتب اسمك واختار رقم سري، وخلاص.', pinChoose: 'اختار رقم سري (4 لـ 6 أرقام)',
     phoneOnlyHint: 'لو دخلت قبل كده هنطلب منك الرقم السري بس.', continueBtn: 'كمّل',
     welcomeOrderSub: 'في طلب مفتوح مستنيك. اكتب رقمك وادخل تختار أكلك على طول.', adminEntryHint: 'الناس، المطاعم، المجموعات، والفلوس',
@@ -260,6 +261,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    payCarried: '{a} moved to the {when} bill', stCarried: 'Moved to the next bill',
     changeNumber: 'Change', newHere: 'This number is new to us. Type your name and choose a PIN, that’s it.', pinChoose: 'Choose a PIN (4 to 6 digits)',
     phoneOnlyHint: 'If you have used Tarweeqa before, we will only ask for your PIN.', continueBtn: 'Continue',
     welcomeOrderSub: 'There is an open order waiting for you. Type your number and go pick your food.', adminEntryHint: 'People, restaurants, groups and money',

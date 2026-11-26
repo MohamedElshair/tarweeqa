@@ -133,6 +133,10 @@
     return _pairs;
   }
   function prevFor(c) { return C.prevFor(S.carts, c); }
+  // the bill of one order, with old debts added and debts already moved to a later bill marked as carried
+  function billFor(c) { return C.computeBill(c, prevFor(c), { carried: C.carriedKeys(S.carts, c) }); }
+  function prevItemsFor(c, key) { const d = C.prevDetail(S.carts, c); return d[key] || []; }
+  const prevItemTxt = x => (x.rest || t('order')) + ' — ' + fmtDate(x.at);
 
   /* ---------- rendering ---------- */
   let renderQueued = false;
@@ -411,11 +415,11 @@
 
   function cartRow(c) {
     const st = stageOf(c);
-    const bill = C.computeBill(c, prevFor(c));
+    const bill = billFor(c);
     const row = bill.rows.find(r => r.key === me());
     let right = '';
     if (c.ownerId === me()) {
-      const open = bill.rows.filter(r => !r.isHost && r.state !== 'paid').length;
+      const open = bill.rows.filter(r => !r.isHost && r.state !== 'paid' && r.state !== 'carried').length;
       right = open ? `<span class="chip chip-picking">${esc(t('waitingPay', { n: open }))}</span>` : `<span class="chip chip-done">✓ ${esc(t('allPaid'))}</span>`;
     } else if (row) {
       right = payChip(row, c);
@@ -431,6 +435,7 @@
     if (row.isHost) return `<span class="chip chip-out">${esc(t('payHost'))}</span>`;
     if (row.state === 'paid') return `<span class="chip chip-done">✓ ${esc(t('payPaid'))}</span>`;
     if (row.state === 'reported') return `<span class="chip chip-picking">${esc(t('payReported'))}</span>`;
+    if (row.state === 'carried') { const to = S.carts.find(x => x.id === row.carriedTo); return `<span class="chip chip-picking">↪ ${esc(t('payCarried', { a: C.fmtMoney(row.carriedOwed), when: to ? fmtDate(to.createdAt) : '' }))}</span>`; }
     const pr = pairs()[c.ownerId] && pairs()[c.ownerId][row.key];
     if (pr && pr.balance >= -0.009) return `<span class="chip chip-done">✓ ${esc(t('paySettledLater'))}</span>`;
     if (row.state === 'partial') return `<span class="chip chip-picking">${esc(t('payPartial', { a: C.fmtMoney(row.paid), b: C.fmtMoney(row.net) }))}</span>`;
@@ -937,7 +942,10 @@
     for (const l of row.lines) L.push(`${l.label}: ${l.value < 0 ? '-' : ''}${C.fmtMoney(Math.abs(l.value))}`);
     L.push(`${t('rowTotal')}: ${money(row.total)}`);
     if (row.prev > 0.009) L.push(`${t('prevCredit')}: -${C.fmtMoney(row.prev)}`);
-    if (row.prev < -0.009) L.push(`${t('prevDebt')}: +${C.fmtMoney(-row.prev)}`);
+    if (row.prev < -0.009) {
+      L.push(`${t('prevDebt')}: +${C.fmtMoney(-row.prev)}`);
+      for (const x of prevItemsFor(c, row.key)) L.push(`   ↳ ${prevItemTxt(x)}: ${C.fmtMoney(x.due)}`);
+    }
     if (Math.abs(row.prev) > 0.009) L.push(t('msgNet', { total: money(row.net) }));
     const pi = c.payInfo || {};
     if (pi.instapay || pi.wallet || pi.instapayLink) {
@@ -979,7 +987,8 @@
         <div><dt>${esc(t('rowFood'))}</dt><dd>${esc(C.fmtMoney(row.subtotal))}</dd></div>
         ${row.lines.map(l => `<div><dt>${esc(l.label)}</dt><dd>${l.value < 0 ? '−' : ''}${esc(C.fmtMoney(Math.abs(l.value)))}</dd></div>`).join('')}
         ${row.prev > 0.009 ? `<div class="ok"><dt>${esc(t('prevCredit'))}</dt><dd>−${esc(C.fmtMoney(row.prev))}</dd></div>` : ''}
-        ${row.prev < -0.009 ? `<div class="warn"><dt>${esc(t('prevDebt'))}</dt><dd>+${esc(C.fmtMoney(-row.prev))}</dd></div>` : ''}
+        ${row.prev < -0.009 ? `<div class="warn"><dt>${esc(t('prevDebt'))}</dt><dd>+${esc(C.fmtMoney(-row.prev))}</dd></div>${prevItemsFor(c, row.key).map(x => `<div class="sub prev-item"><dt>↳ ${esc(prevItemTxt(x))}</dt><dd>${esc(C.fmtMoney(x.due))}</dd></div>`).join('')}` : ''}
+        ${Math.abs(row.prev) > 0.009 ? `<div class="grand"><dt>${esc(t('invDue'))}</dt><dd>${esc(money(row.net))}</dd></div>` : ''}
       </dl>`;
     const placed = st === 'ordered' || st === 'settled';
     const p = row.payment;
@@ -1034,7 +1043,7 @@
 
   function tabBill(c, st, host) {
     const placed = st === 'ordered' || st === 'settled';
-    const bill = C.computeBill(c, prevFor(c));
+    const bill = billFor(c);
     const pi = c.payInfo || {};
     if (!bill.rows.length) return `<p class="empty">${esc(t('noBill'))}</p>`;
     const others = bill.rows.filter(r => !r.isHost);
@@ -1467,7 +1476,14 @@
       const x = by[k] || (by[k] = { key: k, name: (pp && pp.name) || d.name, phone: d.phone || (pp && localPhone(pp.phone)) || '', owe: 0, pending: 0, orders: [] });
       if (P && P.status === 'reported') x.pending = C.round2(x.pending + C.num(P.amount));
       x.owe = C.round2(x.owe + due);
-      x.orders.push({ rest: d.restaurant || '', at: d.createdAt, net: C.num(d.net), due, paid, reported: P && P.status === 'reported', gid: d.gid, cid: d.cid });
+      x.orders.push({ rest: d.restaurant || '', at: C.num(d.createdAt), host: d.ownerId, net: C.num(d.net), due, paid, reported: P && P.status === 'reported', gid: d.gid, cid: d.cid });
+    }
+    // only the newest bill per person and host is owed; it already includes the older unpaid ones
+    for (const x of Object.values(by)) {
+      const newest = {};
+      for (const o of x.orders) if (!newest[o.host] || o.at > newest[o.host]) newest[o.host] = o.at;
+      for (const o of x.orders) if (o.at < newest[o.host] && o.due > 0.009) { o.carried = o.due; o.due = 0; }
+      x.owe = C.round2(x.orders.reduce((a, o) => a + o.due, 0));
     }
     return Object.values(by).sort((a, b) => b.owe - a.owe || b.pending - a.pending || String(a.name).localeCompare(String(b.name)));
   }
@@ -1600,7 +1616,7 @@
         const msg = t('msgDebt', { name: x.name, total: money(x.owe), n: open.length }) + payLines(myPI);
         return `<li class="person debt">
           <span class="avatar sm">${esc(initial(x.name))}</span>
-          <span class="p-main"><strong>${esc(x.name)}</strong><small class="muted">${esc(x.orders.slice(0, 4).map(o => o.rest + ' (' + fmtAgo(o.at) + ')' + (o.due > 0 ? ' ' + C.fmtMoney(o.due) : ' ✓')).join(comma()))}</small>
+          <span class="p-main"><strong>${esc(x.name)}</strong><small class="muted">${esc(x.orders.slice(0, 4).map(o => o.rest + ' (' + fmtAgo(o.at) + ')' + (o.due > 0 ? ' ' + C.fmtMoney(o.due) : o.carried ? ' ↪' : ' ✓')).join(comma()))}</small>
             ${x.pending ? `<small class="muted">${esc(t('admPendingAmt', { a: money(x.pending) }))}</small>` : ''}</span>
           <span class="p-side"><b class="tnum${x.owe > 0 ? ' debt-amt' : ''}">${esc(x.owe > 0 ? money(x.owe) : '✓')}</b></span>
           ${x.owe > 0 && x.phone ? `<div class="debt-actions">${wa(waLink(x.phone, msg), t('remind'))}</div>` : ''}
@@ -1627,6 +1643,7 @@
     if (!H || H.loading) return `<section class="panel"><p class="label">${esc(t('myOrders'))}</p><div class="loading" aria-busy="true"></div></section>`;
     if (H.error) return `<section class="panel"><p class="label">${esc(t('myOrders'))}</p><p class="empty small">${esc(t('errLoadShort'))}</p><button class="ghost small" data-act="openHistory">${esc(t('retry'))}</button></section>`;
     const rows = H.list.map(h => Object.assign({ h }, histState(h)));
+    markCarried(rows.map(r => ({ r, host: (r.h.gid || '') + '|' + (r.h.ownerPhone || r.h.ownerName || ''), at: C.num(r.h.createdAt), hasBill: !!r.h.invoice && !(r.h.invoice || {}).self })));
     const owe = C.round2(rows.reduce((s, r) => s + (['unpaid', 'partial'].includes(r.st) ? r.due : 0), 0));
     const waiting = C.round2(rows.reduce((s, r) => s + (r.st === 'pending' ? r.reported : 0), 0));
     const paid = C.round2(rows.reduce((s, r) => s + r.paid, 0));
@@ -1638,9 +1655,10 @@
       nobill: `<span class="chip chip-none">${esc(t('stNoBill'))}</span>`,
       open: `<span class="chip chip-ordering">${esc(t('stOrdering'))}</span>`,
       host: `<span class="chip chip-ordered">${esc(t('stHost'))}</span>`,
+      carried: `<span class="chip chip-picking">↪ ${esc(t('stCarried'))}</span>`,
       out: `<span class="chip chip-out">${esc(t('psOut'))}</span>`
     }[r.st] || '');
-    const amount = r => r.st === 'host' || r.st === 'out' ? '' : r.total != null ? money(r.st === 'paid' ? r.total : r.due) : r.est ? '≈ ' + money(r.est) : '';
+    const amount = r => r.st === 'host' || r.st === 'out' ? '' : r.st === 'carried' ? money(r.carriedOwed) : r.total != null ? money(r.st === 'paid' ? r.total : r.due) : r.est ? '≈ ' + money(r.est) : '';
     const filter = S.histFilter || 'all';
     const shown = rows.filter(r => filter === 'all' || (filter === 'unpaid' && ['unpaid', 'partial', 'pending'].includes(r.st)));
     return `<section class="stack">
@@ -1662,6 +1680,17 @@
         </button></li>`;
       }).join('')}</ul>` : `<p class="empty small">${esc(filter === 'unpaid' ? t('youOweNothing') : t('noOrders'))}</p>`}
     </section>`;
+  }
+  // bills are cumulative: a later bill from the same host already includes what was still owed on earlier ones.
+  // So only the newest bill counts as owed; older unpaid ones show as "moved to the next bill".
+  function markCarried(list) {
+    const latest = {};
+    for (const x of list) if (x.hasBill && (!latest[x.host] || x.at > latest[x.host])) latest[x.host] = x.at;
+    for (const x of list) {
+      const r = x.r;
+      if (!x.hasBill || x.at >= latest[x.host]) continue;
+      if (['unpaid', 'partial'].includes(r.st) && r.due > 0.009) { r.carriedOwed = r.due; r.st = 'carried'; r.due = 0; }
+    }
   }
   async function loadMyOrders() {
     if (isLocal() || !S.store.history) return;
@@ -2428,7 +2457,7 @@
 
   /* ---------- collecting the money: who still owes on my orders ---------- */
   function unpaidRows(c) {
-    return C.computeBill(c, prevFor(c)).rows.filter(r => !r.isHost && (r.state === 'unpaid' || r.state === 'partial') && r.remaining > 0.009);
+    return billFor(c).rows.filter(r => !r.isHost && (r.state === 'unpaid' || r.state === 'partial') && r.remaining > 0.009);
   }
   function remindMessage(c, row) {
     const link = c.invoices && c.invoices[row.key] && c.invoiceKey ? invoiceLink(c, row.key) : '';
@@ -2439,7 +2468,7 @@
     const mine = S.carts.filter(c => c.ownerId === me() && c.stage === 'ordered').sort((a, b) => b.createdAt - a.createdAt);
     const out = [];
     for (const c of mine) {
-      const bill = C.computeBill(c, prevFor(c));
+      const bill = billFor(c);
       const un = bill.rows.filter(r => !r.isHost && (r.state === 'unpaid' || r.state === 'partial') && r.remaining > 0.009);
       const rep = bill.rows.filter(r => r.state === 'reported');
       if (!un.length && !rep.length) continue;
@@ -2668,7 +2697,7 @@
   }
   async function issueInvoices(c) {
     await loadHistory(c.restaurant.name, true);
-    const bill = C.computeBill(c, prevFor(c));
+    const bill = billFor(c);
     const secret = c.invoiceKey || rid(18);
     const base = 'TQ-' + ymd(c.createdAt) + '-' + c.id.replace(/[^a-z0-9]/gi, '').slice(-4).toUpperCase();
     const p = { invoiceKey: secret, invoicesAt: Date.now() };
@@ -2682,6 +2711,7 @@
         }),
         subtotal: r.subtotal, lines: r.lines.map(l => ({ label: l.label, value: l.value, kind: l.kind })),
         exact: r.exact, total: r.total, prev: r.isHost ? 0 : r.prev, net: r.isHost ? r.total : r.net, self: !!r.isHost,
+        prevItems: !r.isHost && r.prev < -0.009 ? prevItemsFor(c, r.key) : [],
         receiptNo: c.receiptNo || '', receiptDate: c.receiptDate || '', people: bill.people, orderFood: bill.food, orderGrand: bill.grand,
         splitNote: (c.charges || []).filter(ch => C.num(ch.amount)).map(ch => ch.label + ': ' + t('split_' + (ch.split || C.DEFAULT_SPLIT[ch.kind] || 'equal'))).join(' · ')
       };
@@ -2693,7 +2723,7 @@
     return Object.keys(p).filter(k => k.startsWith('invoices.')).map(k => k.slice(9));
   }
   function startSending(c, keys) {
-    const paidKeys = new Set(C.computeBill(c, prevFor(c)).rows.filter(r => r.state === 'paid').map(r => r.key));   // never re-send to someone who paid
+    const paidKeys = new Set(billFor(c).rows.filter(r => r.state === 'paid').map(r => r.key));   // never re-send to someone who paid
     keys = (keys || Object.keys(c.invoices || {})).filter(k => k !== c.ownerId && !paidKeys.has(k));
     S.sendQ = keys.length ? { cartId: c.id, keys, i: 0 } : null;
     render(true);
@@ -2874,7 +2904,7 @@
           <div><dt>${esc(t('rowFood'))}</dt><dd>${esc(C.fmtMoney(I.subtotal))}</dd></div>
           ${(I.lines || []).map(l => `<div><dt>${esc(l.label)}</dt><dd>${l.value < 0 ? '−' : ''}${esc(C.fmtMoney(Math.abs(l.value)))}</dd></div>`).join('')}
           ${Math.abs(I.total - I.exact) > 0.009 ? `<div><dt>${esc(t('invRounding'))}</dt><dd>+${esc(C.fmtMoney(C.round2(I.total - I.exact)))}</dd></div>` : ''}
-          ${Math.abs(I.prev) > 0.009 ? `<div class="sub"><dt>${esc(t('rowTotal'))}</dt><dd>${esc(C.fmtMoney(I.total))}</dd></div><div class="${I.prev > 0 ? 'ok' : 'warn'}"><dt>${esc(I.prev > 0 ? t('prevCredit') : t('prevDebt'))}</dt><dd>${I.prev > 0 ? '−' : '+'}${esc(C.fmtMoney(Math.abs(I.prev)))}</dd></div>` : ''}
+          ${Math.abs(I.prev) > 0.009 ? `<div class="sub"><dt>${esc(t('rowTotal'))}</dt><dd>${esc(C.fmtMoney(I.total))}</dd></div><div class="${I.prev > 0 ? 'ok' : 'warn'}"><dt>${esc(I.prev > 0 ? t('prevCredit') : t('prevDebt'))}</dt><dd>${I.prev > 0 ? '−' : '+'}${esc(C.fmtMoney(Math.abs(I.prev)))}</dd></div>${I.prev < 0 ? (I.prevItems || []).map(x => `<div class="sub prev-item"><dt>↳ ${esc(prevItemTxt(x))}</dt><dd>${esc(C.fmtMoney(x.due))}</dd></div>`).join('') : ''}` : ''}
           <div class="grand"><dt>${esc(t('invDue'))}</dt><dd>${esc(money(I.net))}</dd></div>
         </dl>
         <div class="inv-stamp ${state}">${esc(stamp)}${P && P.method ? ` · ${esc(t('method_' + P.method))}` : ''}</div>
@@ -2943,7 +2973,7 @@
     roundUp: el => patch(curCart(), { roundUp: el.checked }),
     paidToggle: el => {
       const c = curCart(), k = el.dataset.key;
-      const r = C.computeBill(c, prevFor(c)).rows.find(x => x.key === k); if (!r) return;
+      const r = billFor(c).rows.find(x => x.key === k); if (!r) return;
       const old = (c.payments || {})[k];
       const v = el.checked ? { amount: C.round2(Math.max(0, r.net)), method: (old && old.method) || 'instapay', status: 'confirmed', at: Date.now(), by: me() } : null;
       const np = Object.assign({}, c.payments); if (v) np[k] = v; else delete np[k]; c.payments = np; render(true);
