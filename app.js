@@ -374,7 +374,7 @@
     const out = [];
     for (const c of S.carts) {
       if (c.ownerId !== me()) continue;
-      for (const k of Object.keys(c.payments || {})) if (c.payments[k].status === 'reported') out.push({ c, key: k, p: c.payments[k] });
+      for (const k of Object.keys(c.payments || {})) if (c.payments[k] && c.payments[k].status === 'reported') out.push({ c, key: k, p: c.payments[k] });
     }
     return out;
   }
@@ -2196,7 +2196,8 @@
     return Object.keys(p).filter(k => k.startsWith('invoices.')).map(k => k.slice(9));
   }
   function startSending(c, keys) {
-    keys = (keys || Object.keys(c.invoices || {})).filter(k => k !== c.ownerId);
+    const paidKeys = new Set(C.computeBill(c, prevFor(c)).rows.filter(r => r.state === 'paid').map(r => r.key));   // never re-send to someone who paid
+    keys = (keys || Object.keys(c.invoices || {})).filter(k => k !== c.ownerId && !paidKeys.has(k));
     S.sendQ = keys.length ? { cartId: c.id, keys, i: 0 } : null;
     render(true);
   }
@@ -2280,8 +2281,10 @@
       due += need; got += recv;
       const diff = C.round2(recv - need);
       const phone = (one && one.phone) || r.phone;
+      const isPaid = recv > 0 && recv >= need - 0.009;
       let send;
-      if (!one || stale) send = `<button class="secondary small" data-act="issueOnly">${esc(one ? t('updateInvoice') : t('makeInvoice'))}</button>`;
+      if (isPaid) send = `<button class="secondary small" disabled aria-disabled="true" title="${esc(t('paidNoResend'))}">✓ ${esc(t('payPaid'))}</button>`;   // paid: no sending again by mistake
+      else if (!one || stale) send = `<button class="secondary small" data-act="issueOnly">${esc(one ? t('updateInvoice') : t('makeInvoice'))}</button>`;
       else if (phone) send = `<a class="wa small" data-act="markSent" data-keep="1" data-key="${esc(r.key)}" href="${esc(waLink(phone, invoiceMessage(c, r.key)))}" target="_blank" rel="noopener">${waIcon()} ${esc(one.sentAt ? t('sendAgainOne') : t('sendOne'))}</a>`;
       else send = `<button class="secondary small" data-act="copyInvoiceLink" data-text="${esc(invoiceMessage(c, r.key))}">${esc(t('copyInvoiceMsg'))}</button>`;
       return `<li class="cs-row${recv >= need - 0.009 && need > 0 ? ' paid' : ''}">
@@ -2438,14 +2441,14 @@
       const r = C.computeBill(c, prevFor(c)).rows.find(x => x.key === k); if (!r) return;
       const old = (c.payments || {})[k];
       const v = el.checked ? { amount: C.round2(Math.max(0, r.net)), method: (old && old.method) || 'instapay', status: 'confirmed', at: Date.now(), by: me() } : null;
-      c.payments = Object.assign({}, c.payments, { [k]: v || undefined }); render(true);
+      const np = Object.assign({}, c.payments); if (v) np[k] = v; else delete np[k]; c.payments = np; render(true);
       patch(c, { ['payments.' + k]: v || undefined });
     },
     paidAmount: el => {
       const c = curCart(), k = el.dataset.key, a = C.round2(C.num(el.value));
       const old = (c.payments || {})[k];
       const v = a > 0 ? { amount: a, method: (old && old.method) || 'instapay', status: 'confirmed', at: Date.now(), by: me() } : null;
-      c.payments = Object.assign({}, c.payments, { [k]: v || undefined }); render(true);
+      const np = Object.assign({}, c.payments); if (v) np[k] = v; else delete np[k]; c.payments = np; render(true);
       patch(c, { ['payments.' + k]: v || undefined });
     },
     paidActual: el => { const v = C.round2(C.num(el.value)); patch(curCart(), { receiptTotal: v > 0 ? v : null }); },
