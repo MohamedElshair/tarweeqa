@@ -781,3 +781,6 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .ed-open .field { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; }
 .ed-open .field > textarea, .ed-open .field > input, .ed-open .field > select { width: 100% !important; max-width: none; box-sizing: border-box; }
 .ed-open .grid2 { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+.wallet-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); border: 1px solid var(--accent); font-weight: 600; }
+.wallet-line b { font-size: 1.15rem; color: var(--accent); }
+.wallet-line small { flex-basis: 100%; font-weight: 500; }

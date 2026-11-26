@@ -521,6 +521,7 @@
       r.reported = p && p.status === 'reported' ? round2(num(p.amount)) : 0;
       r.remaining = round2(Math.max(0, r.net - r.paid));
       r.state = !p ? 'unpaid' : p.status === 'reported' ? 'reported' : (r.paid + 0.001 >= r.net ? 'paid' : 'partial');
+      if (r.net <= 0.009 && r.state !== 'reported' && !r.paid) { r.state = 'paid'; r.byWallet = true; }   // the wallet covers this whole bill
       // still owed here, but a later order's bill already carries it: collect it there, not here
       if (carried && carried.has(r.key) && (r.state === 'unpaid' || r.state === 'partial') && r.remaining > 0.009) {
         r.carriedOwed = r.remaining; r.carriedTo = carried.get ? carried.get(r.key) : null; r.state = 'carried'; r.remaining = 0;
@@ -573,6 +574,16 @@
     const mine = pairs[cart.ownerId] || {};
     const out = {};
     for (const k of Object.keys(mine)) {
+      if (mine[k].balance > 0.009) {
+        // wallet: where the extra money came from (paid more than the bill)
+        let left = round2(mine[k].balance); const list = [];
+        for (const x of mine[k].carts.slice().reverse()) {
+          if (left <= 0.009) break;
+          const extra = round2(Math.min(left, Math.max(0, x.paid - x.total)));
+          if (extra > 0.009) { list.unshift({ id: x.id, rest: x.rest || '', at: x.at, due: extra, credit: true }); left = round2(left - extra); }
+        }
+        out[k] = list; continue;
+      }
       if (mine[k].balance > -0.009) continue;
       // walk the orders newest first and keep the unpaid ones until they explain the whole debt
       let left = round2(-mine[k].balance); const list = [];

@@ -459,7 +459,7 @@
 
   function payChip(row, c) {
     if (row.isHost) return `<span class="chip chip-out">${esc(t('payHost'))}</span>`;
-    if (row.state === 'paid') return `<span class="chip chip-done">✓ ${esc(t('payPaid'))}</span>`;
+    if (row.state === 'paid') return `<span class="chip chip-done">✓ ${esc(row.byWallet ? t('payByWallet') : t('payPaid'))}</span>`;
     if (row.state === 'reported') return `<span class="chip chip-picking">${esc(t('payReported'))}</span>`;
     if (row.state === 'carried') { const to = S.carts.find(x => x.id === row.carriedTo); return `<span class="chip chip-picking">↪ ${esc(t('payCarried', { a: C.fmtMoney(row.carriedOwed), when: to ? fmtDate(to.createdAt) : '' }))}</span>`; }
     const pr = pairs()[c.ownerId] && pairs()[c.ownerId][row.key];
@@ -988,12 +988,16 @@
     L.push('', `${t('rowFood')}: ${C.fmtMoney(row.subtotal)}`);
     for (const l of row.lines) L.push(`${l.label}: ${l.value < 0 ? '-' : ''}${C.fmtMoney(Math.abs(l.value))}`);
     L.push(`${t('rowTotal')}: ${money(row.total)}`);
-    if (row.prev > 0.009) L.push(`${t('prevCredit')}: -${C.fmtMoney(row.prev)}`);
+    if (row.prev > 0.009) {
+      L.push(`${t('prevCredit')}: -${C.fmtMoney(Math.min(row.prev, row.total))}`);
+      for (const x of prevItemsFor(c, row.key)) L.push(`   ↳ ${prevItemTxt(x)}: ${C.fmtMoney(x.due)}`);
+      if (row.prev > row.total + 0.009) L.push(t('walletLeft', { a: C.fmtMoney(C.round2(row.prev - row.total)) }));
+    }
     if (row.prev < -0.009) {
       L.push(`${t('prevDebt')}: +${C.fmtMoney(-row.prev)}`);
       for (const x of prevItemsFor(c, row.key)) L.push(`   ↳ ${prevItemTxt(x)}: ${C.fmtMoney(x.due)}`);
     }
-    if (Math.abs(row.prev) > 0.009) L.push(t('msgNet', { total: money(row.net) }));
+    if (Math.abs(row.prev) > 0.009) L.push(t('msgNet', { total: money(Math.max(0, row.net)) }));
     const pi = c.payInfo || {};
     if (pi.instapay || pi.wallet || pi.instapayLink) {
       L.push('', t('msgPay'));
@@ -1033,9 +1037,9 @@
     const lines = `<dl class="bill-lines tnum">
         <div><dt>${esc(t('rowFood'))}</dt><dd>${esc(C.fmtMoney(row.subtotal))}</dd></div>
         ${row.lines.map(l => `<div><dt>${esc(l.label)}</dt><dd>${l.value < 0 ? '−' : ''}${esc(C.fmtMoney(Math.abs(l.value)))}</dd></div>`).join('')}
-        ${row.prev > 0.009 ? `<div class="ok"><dt>${esc(t('prevCredit'))}</dt><dd>−${esc(C.fmtMoney(row.prev))}</dd></div>` : ''}
+        ${row.prev > 0.009 ? `<div class="ok"><dt>💳 ${esc(t('prevCredit'))}</dt><dd>−${esc(C.fmtMoney(Math.min(row.prev, row.total)))}</dd></div>${prevItemsFor(c, row.key).map(x => `<div class="sub prev-item"><dt>↳ ${esc(prevItemTxt(x))}</dt><dd>${esc(C.fmtMoney(x.due))}</dd></div>`).join('')}${row.prev > row.total + 0.009 ? `<div class="sub prev-item"><dt>${esc(t('walletLeft', { a: C.fmtMoney(C.round2(row.prev - row.total)) }))}</dt><dd></dd></div>` : ''}` : ''}
         ${row.prev < -0.009 ? `<div class="warn"><dt>${esc(t('prevDebt'))}</dt><dd>+${esc(C.fmtMoney(-row.prev))}</dd></div>${prevItemsFor(c, row.key).map(x => `<div class="sub prev-item"><dt>↳ ${esc(prevItemTxt(x))}</dt><dd>${esc(C.fmtMoney(x.due))}</dd></div>`).join('')}` : ''}
-        ${Math.abs(row.prev) > 0.009 ? `<div class="grand"><dt>${esc(t('invDue'))}</dt><dd>${esc(money(row.net))}</dd></div>` : ''}
+        ${Math.abs(row.prev) > 0.009 ? `<div class="grand"><dt>${esc(t('invDue'))}</dt><dd>${esc(money(Math.max(0, row.net)))}</dd></div>` : ''}
       </dl>`;
     const placed = st === 'ordered' || st === 'settled';
     const p = row.payment;
@@ -1080,7 +1084,7 @@
     return `<li class="bill-card state-${row.state}${isMe ? ' is-me' : ''}">
       <div class="bc-head">
         <strong>${esc(row.name)}${isMe ? ` <small class="muted">(${esc(t('you'))})</small>` : ''}${row.guest ? ` <small class="muted">· ${esc(t('guest'))}</small>` : ''}</strong>
-        <span class="bc-total tnum">${esc(money(Math.abs(row.prev) > 0.009 ? row.net : row.total))}</span>
+        <span class="bc-total tnum">${esc(money(Math.abs(row.prev) > 0.009 ? Math.max(0, row.net) : row.total))}</span>
       </div>
       ${lines}
       ${placed ? `<div class="bc-state">${payChip(row, c)}</div>` : ''}
@@ -1726,7 +1730,12 @@
     const amount = r => r.st === 'host' || r.st === 'out' ? '' : r.st === 'carried' ? money(r.carriedOwed) : r.total != null ? money(r.st === 'paid' ? r.total : r.due) : r.est ? '≈ ' + money(r.est) : '';
     const filter = S.histFilter || 'all';
     const shown = rows.filter(r => filter === 'all' || (filter === 'unpaid' && ['unpaid', 'partial', 'pending'].includes(r.st)));
+    // wallet: what I paid beyond the newest bill from each host, plus credit that bill did not use up
+    const newest = {};
+    for (const r of rows) { const h = r.h; if (!h.invoice || h.invoice.self) continue; const k = (h.gid || '') + '|' + (h.ownerPhone || h.ownerName || ''); if (!newest[k] || C.num(h.createdAt) > C.num(newest[k].createdAt)) newest[k] = h; }
+    const wallet = C.round2(Object.values(newest).reduce((a, h) => { const I = h.invoice, P = h.payment, pd = P && P.status === 'confirmed' ? C.num(P.amount) : 0; return a + Math.max(0, pd - C.num(I.net)) + Math.max(0, C.num(I.prev) - C.num(I.total)); }, 0));
     return `<section class="stack">
+      ${wallet > 0.009 ? `<div class="wallet-line">💳 <span>${esc(t('walletBal'))}</span><b class="tnum">${esc(money(wallet))}</b><small class="muted">${esc(t('walletHint'))}</small></div>` : ''}
       <div class="summary three">
         <div><span>${esc(t('youOwe'))}</span><strong class="tnum${owe > 0 ? ' warn-txt' : ''}">${esc(money(owe))}</strong></div>
         <div><span>${esc(t('waitingConfirmShort'))}</span><strong class="tnum">${esc(money(waiting))}</strong></div>
@@ -2909,8 +2918,8 @@
           return { name: it.name, qty, unit, total: C.round2(unit * qty), note: it.note || '', askedFor: it.askedFor || '', prev: mv ? mv.prev : null };
         }),
         subtotal: r.subtotal, lines: r.lines.map(l => ({ label: l.label, value: l.value, kind: l.kind })),
-        exact: r.exact, total: r.total, prev: r.isHost ? 0 : r.prev, net: r.isHost ? r.total : r.net, self: !!r.isHost,
-        prevItems: !r.isHost && r.prev < -0.009 ? prevItemsFor(c, r.key) : [],
+        exact: r.exact, total: r.total, prev: r.isHost ? 0 : r.prev, net: r.isHost ? r.total : Math.max(0, r.net), self: !!r.isHost,
+        prevItems: !r.isHost && Math.abs(r.prev) > 0.009 ? prevItemsFor(c, r.key) : [],
         receiptNo: c.receiptNo || '', receiptDate: c.receiptDate || '', people: bill.people, orderFood: bill.food, orderGrand: bill.grand,
         splitNote: (c.charges || []).filter(ch => C.num(ch.amount)).map(ch => ch.label + ': ' + t('split_' + (ch.split || C.DEFAULT_SPLIT[ch.kind] || 'equal'))).join(' · ')
       };
@@ -3103,7 +3112,7 @@
           <div><dt>${esc(t('rowFood'))}</dt><dd>${esc(C.fmtMoney(I.subtotal))}</dd></div>
           ${(I.lines || []).map(l => `<div><dt>${esc(l.label)}</dt><dd>${l.value < 0 ? '−' : ''}${esc(C.fmtMoney(Math.abs(l.value)))}</dd></div>`).join('')}
           ${Math.abs(I.total - I.exact) > 0.009 ? `<div><dt>${esc(t('invRounding'))}</dt><dd>+${esc(C.fmtMoney(C.round2(I.total - I.exact)))}</dd></div>` : ''}
-          ${Math.abs(I.prev) > 0.009 ? `<div class="sub"><dt>${esc(t('rowTotal'))}</dt><dd>${esc(C.fmtMoney(I.total))}</dd></div><div class="${I.prev > 0 ? 'ok' : 'warn'}"><dt>${esc(I.prev > 0 ? t('prevCredit') : t('prevDebt'))}</dt><dd>${I.prev > 0 ? '−' : '+'}${esc(C.fmtMoney(Math.abs(I.prev)))}</dd></div>${I.prev < 0 ? (I.prevItems || []).map(x => `<div class="sub prev-item"><dt>↳ ${esc(prevItemTxt(x))}</dt><dd>${esc(C.fmtMoney(x.due))}</dd></div>`).join('') : ''}` : ''}
+          ${Math.abs(I.prev) > 0.009 ? `<div class="sub"><dt>${esc(t('rowTotal'))}</dt><dd>${esc(C.fmtMoney(I.total))}</dd></div><div class="${I.prev > 0 ? 'ok' : 'warn'}"><dt>${I.prev > 0 ? '💳 ' : ''}${esc(I.prev > 0 ? t('prevCredit') : t('prevDebt'))}</dt><dd>${I.prev > 0 ? '−' : '+'}${esc(C.fmtMoney(I.prev > 0 ? Math.min(I.prev, I.total) : -I.prev))}</dd></div>${(I.prevItems || []).map(x => `<div class="sub prev-item"><dt>↳ ${esc(prevItemTxt(x))}</dt><dd>${esc(C.fmtMoney(x.due))}</dd></div>`).join('')}${I.prev > I.total + 0.009 ? `<div class="sub prev-item"><dt>${esc(t('walletLeft', { a: C.fmtMoney(C.round2(I.prev - I.total)) }))}</dt><dd></dd></div>` : ''}` : ''}
           <div class="grand"><dt>${esc(t('invDue'))}</dt><dd>${esc(money(I.net))}</dd></div>
         </dl>
         <div class="inv-stamp ${state}">${esc(stamp)}${P && P.method ? ` · ${esc(t('method_' + P.method))}` : ''}</div>

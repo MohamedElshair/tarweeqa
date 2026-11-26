@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    walletLeft: 'باقي في محفظتك بعد الطلب ده: {a}', payByWallet: 'اتدفع من المحفظة', walletBal: 'محفظتك', walletHint: 'فلوس زيادة دفعتها، هتتخصم من طلبك الجاي لوحدها.',
     addOne: 'ضيف {name}', category: 'القسم', sections: 'الأقسام', otherCat: 'أخرى', autoSort: 'رتّب الأصناف حسب النوع', autoSortHint: 'الفول مع بعض، الفلافل مع بعض، البطاطس مع بعض… وتقدر تنقل أي صنف بإيدك من القائمة اللي تحته.', autoSorted: 'اترتّب {n} صنف. راجع ودوس «حفظ».', newCat: 'قسم جديد…', newCatPrompt: 'اسم القسم الجديد:', renameCatPrompt: 'الاسم الجديد للقسم:', movedTo: 'اتنقل لـ «{c}»',
     reimportAll: 'استورد الأصناف من كل الصور', reimport: 'استورد الأصناف من الصورة دي تاني', reimportShort: 'استورد', reimportNone: 'مفيش صورة محفوظة أقرا منها.', deletePic: 'امسح الصورة', picDeleted: 'اتمسحت الصورة والأسعار اللي جت منها', rcKindMenu: 'منيو', rcKindReceipt: 'إيصال طلب', picsHint: '«استورد» بيقرا الصورة تاني ويضيف الأصناف أو يحدّث أسعارها. ولو عايز تضيف صور جديدة ارفعها من زرار السكرين شوت فوق.', menuCleared: 'المنيو اتمسح. دوس «حفظ» عشان يتسجل.',
     logoAdd: '📷 ارفع لوجو المطعم', logoChange: 'غيّر اللوجو', logoRemove: 'شيل اللوجو', logoHint: 'صورة مربعة أو سكرين شوت للوجو. هيظهر في الطلبات وقائمة المطاعم. متنساش تدوس «حفظ».', logoReady: 'اللوجو جاهز. دوس «حفظ».', logoFail: 'ماقدرتش أقرا الصورة دي. جرّب صورة تانية.',
@@ -154,7 +155,7 @@ window.TARWEEQA_I18N = {
     outOn: 'تمام، مش محسوب عليك حاجة في الطلب ده.', outOther: '{name} مش هياكل في الطلب ده.',
     estimateFor: 'حساب {name} المتوقع', estDelivery: 'التوصيل (÷{n})', estimateNote: 'الرقم ده تقديري من مصاريف المطعم المعتادة، وبيتظبط لما الناس تزيد أو بعد الطلب.',
     estimateEmpty: 'اختار أكلك وهتشوف حسابك المتوقع على طول، بالتوصيل والخدمة.',
-    prevCredit: 'رصيد ليك من قبل', prevDebt: 'عليك من طلبات قبل كده',
+    prevCredit: 'من محفظتك (فلوس زيادة دفعتها قبل كده)', prevDebt: 'عليك من طلبات قبل كده',
     repeatLast: 'اطلب زي آخر مرة', myItems: 'اختياراتي', itemsOf: 'اختيارات {name}',
     emptyMine: 'لسه ما اخترتش حاجة. اختار من المنيو تحت.', cartClosedNote: 'الطلب قفل. لو محتاج تعديل كلّم صاحب الطلب.',
     notePh: 'ملاحظة: من غير بصل، حار…', doneBtn: 'خلصت طلبي', doneForOther: 'خلص طلب {name}', doneOn: 'طلبك متأكد. تقدر تعدل لحد ما الطلب يقفل.',
@@ -264,6 +265,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    walletLeft: 'Left in your wallet after this order: {a}', payByWallet: 'Paid from wallet', walletBal: 'Your wallet', walletHint: 'Extra you paid; it comes off your next order by itself.',
     addOne: 'Add {name}', category: 'Section', sections: 'Sections', otherCat: 'Other', autoSort: 'Sort items by type', autoSortHint: 'Foul together, falafel together, potatoes together… Move any item by hand with the list under it.', autoSorted: 'Sorted {n} items. Check and tap “Save”.', newCat: 'New section…', newCatPrompt: 'Name of the new section:', renameCatPrompt: 'New name for the section:', movedTo: 'Moved to “{c}”',
     reimportAll: 'Re-import items from all pictures', reimport: 'Read items from this picture again', reimportShort: 'Re-import', reimportNone: 'No saved picture to read.', deletePic: 'Delete picture', picDeleted: 'Picture and the prices from it deleted', rcKindMenu: 'Menu', rcKindReceipt: 'Order receipt', picsHint: '“Re-import” reads the picture again and adds items or updates their prices. To add new pictures, use the screenshot button above.', menuCleared: 'Menu cleared. Tap “Save” to keep it.',
     logoAdd: '📷 Upload restaurant logo', logoChange: 'Change logo', logoRemove: 'Remove logo', logoHint: 'A square picture or a screenshot of the logo. It shows on orders and the restaurant list. Remember to tap “Save”.', logoReady: 'Logo ready. Tap “Save”.', logoFail: 'Couldn’t read that picture. Try another one.',
@@ -417,7 +419,7 @@ window.TARWEEQA_I18N = {
     outOn: "OK, nothing is charged to you in this order.", outOther: '{name} is not eating in this order.',
     estimateFor: "{name}'s expected share", estDelivery: 'Delivery (÷{n})', estimateNote: "An estimate from the restaurant's usual charges. It adjusts as people join and after the order is placed.",
     estimateEmpty: 'Pick your food and your expected share appears right away, with delivery and service.',
-    prevCredit: 'Credit from before', prevDebt: 'Owed from earlier orders',
+    prevCredit: 'From your wallet (extra you paid before)', prevDebt: 'Owed from earlier orders',
     repeatLast: 'Same as last time', myItems: 'My picks', itemsOf: "{name}'s picks",
     emptyMine: 'Nothing picked yet. Choose from the menu below.', cartClosedNote: 'The order is closed. Ask the host if you need a change.',
     notePh: 'Note: no onions, spicy…', doneBtn: "I'm done", doneForOther: "{name}'s order is done", doneOn: 'Your order is confirmed. You can edit until it closes.',
