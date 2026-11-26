@@ -595,6 +595,26 @@
     return out;
   }
 
+  /* Sort an item into a section by what it is (Egyptian breakfast menus): the main ingredient decides.
+     Returns '' when nothing matches. */
+  const CATS = [
+    ['مشروبات', /(شاي|شاى|قهوه|نسكافيه|كابتشينو|عصير|مياه|ميه معدنيه|بيبسي|كوكا|كولا|سفن اب|سبرايت|مشروب|ينسون|كركديه|حليب|سحلب)/],
+    ['حلويات', /(بسبوسه|كنافه|رز بلبن|ارز بلبن|مهلبيه|بقلاوه|شوكولات|نوتيلا|كيك|حلويات|حلاوه|قطايف|زلابيه|ام علي)/],
+    ['فول', /(^|\s)فول(\s|$)/],
+    ['فلافل وطعمية', /(فلافل|طعميه)/],
+    ['بطاطس', /(بطاطس|بطاطا|فرايز|fries|potato)/],
+    ['بيض وأومليت', /(بيض|اومليت|امليت|اومليط|شكشوكه)/],
+    ['لحوم وفراخ', /(كبده|سجق|فراخ|فرخه|شاورما|برجر|برجير|لحم|بسطرمه|لانشون|هوت دوج|كفته|سوسيس|حواوشي|سمك|تونه)/],
+    ['جبن', /(جبن|رومي|موتزاريلا|موزريلا|شيدر|قريش|براميلي|حلوم|لبنه)/],
+    ['سلطات وأطباق جانبية', /(سلطه|طحينه|بابا غنوج|مخلل|بتنجان|باذنجان|حمص|بصل|طرشي|صوص)/],
+    ['عيش وإضافات', /(عيش|خبز|رغيف|اضافه|اضافات|اكسترا|extra)/]
+  ];
+  function autoCategory(name) {
+    const n = ' ' + normName(name) + ' ';
+    for (const [cat, re] of CATS) if (re.test(n)) return cat;
+    return '';
+  }
+
   /* Combined order for placing it on Talabat / by phone */
   function aggregate(cart) {
     const map = new Map();
@@ -654,7 +674,7 @@
     return { km: round2(km), limit, state: km <= limit ? 'near' : 'far' };
   }
 
-  const api = { distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
+  const api = { distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, autoCategory, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TarweeqaCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -724,8 +724,9 @@
     const menu = canEdit ? `<section class="menu">
         <div class="section-head"><h2>${esc(t('menuTitle'))}</h2><small class="muted">${esc(c.restaurant.name)}</small></div>
         <input type="search" id="menu-search" class="search" data-input="search" placeholder="${esc(t('search'))}" value="${esc(S.menuQuery)}">
-        ${groups.map(g => `<div class="menu-group" data-group${q && !g.items.some(it => it.name.toLowerCase().includes(q)) ? ' hidden' : ''}>
-          ${g.name ? `<h3 class="cat">${esc(g.name)}</h3>` : ''}
+        ${catTabs(groups, 'mc')}
+        ${groups.map((g, gi) => `<div class="menu-group" id="mc-${gi}" data-group${q && !g.items.some(it => it.name.toLowerCase().includes(q)) ? ' hidden' : ''}>
+          ${g.name || g.other ? `<h3 class="cat">${esc(g.name || t('otherCat'))} <small class="tnum">${g.items.length}</small></h3>` : ''}
           <ul class="menu-items">${g.items.map(it => {
             const n = qtyById[it.id] || 0;
             return `<li class="menu-item" data-name="${esc(it.name.toLowerCase())}"${q && !it.name.toLowerCase().includes(q) ? ' hidden' : ''}>
@@ -834,7 +835,15 @@
       if (!(cat in map)) { map[cat] = []; order.push(cat); }
       map[cat].push(it);
     }
-    return order.map(name => ({ name, items: map[name] }));
+    // items with no section go last, under "Other" when there are sections
+    const named = order.filter(n => n), out = named.map(name => ({ name, items: map[name] }));
+    if (map['']) out.push({ name: '', items: map[''], other: named.length > 0 });
+    return out;
+  }
+  // a row of section chips that jumps to each section
+  function catTabs(groups, prefix) {
+    if (groups.length < 2) return '';
+    return `<nav class="cat-tabs" aria-label="${esc(t('sections'))}">${groups.map((g, i) => `<button class="chip-btn" data-act="jumpCat" data-target="${prefix}-${i}">${esc(g.name || t('otherCat'))} <small class="tnum">${g.items.length}</small></button>`).join('')}</nav>`;
   }
 
   /* people */
@@ -1410,12 +1419,15 @@
         <div class="section-head"><h2>${esc(t('menu'))} <small class="muted">${esc(t('itemsCount', { n: d.items.length }))}</small></h2>
           ${d.items.length && S.history[d.name] ? movesSummary(d) : ''}
           ${d.items.length ? `<button class="ghost small" data-act="clearMenu">${esc(S.confirmKey === 'clearMenu' ? t('confirmAgain') : t('clearMenu'))}</button>` : ''}</div>
-        ${d.items.length ? cats.map(g => `<div class="menu-group">
-            ${g.name ? `<h3 class="cat">${esc(g.name)}</h3>` : ''}
+        ${d.items.length ? `<div class="sort-bar"><button class="secondary small" data-act="autoSortMenu">🗂 ${esc(S.confirmKey === 'autoSort' ? t('confirmAgain') : t('autoSort'))}</button><small class="muted">${esc(t('autoSortHint'))}</small></div>` : ''}
+        ${catTabs(cats, 'ec')}
+        ${d.items.length ? cats.map((g, gi) => `<div class="menu-group" id="ec-${gi}">
+            ${g.name || g.other ? `<h3 class="cat cat-edit"><span>${esc(g.name || t('otherCat'))} <small class="tnum">${g.items.length}</small></span>${g.name ? `<button class="ghost small" data-act="renameCat" data-cat="${esc(g.name)}">✎ ${esc(t('rename'))}</button>` : ''}</h3>` : ''}
             <ul class="edit-items">${g.items.map(it => `<li${it.fresh ? ' class="fresh"' : ''}>
-              <input class="ei-name" id="ei-n-${esc(it.id)}" data-change="itemName" data-id="${esc(it.id)}" value="${esc(it.name)}" aria-label="${esc(t('itemName'))}">
+              <textarea class="ei-name" id="ei-n-${esc(it.id)}" data-change="itemName" data-id="${esc(it.id)}" rows="${Math.max(1, Math.ceil(it.name.length / 26))}" aria-label="${esc(t('itemName'))}">${esc(it.name)}</textarea>
               <input class="ei-price tnum" id="ei-p-${esc(it.id)}" data-change="itemPrice" data-id="${esc(it.id)}" inputmode="decimal" value="${esc(it.price)}" aria-label="${esc(t('price'))}">
               <button class="icon-btn" data-act="draftDelItem" data-id="${esc(it.id)}" aria-label="${esc(t('delete'))}">×</button>
+              <select class="ei-cat" data-change="itemCat" data-id="${esc(it.id)}" aria-label="${esc(t('category'))}">${cats.filter(x => x.name).map(x => `<option value="${esc(x.name)}"${x.name === (it.category || '') ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}<option value=""${!(it.category || '') ? ' selected' : ''}>${esc(t('otherCat'))}</option><option value="__new">＋ ${esc(t('newCat'))}</option></select>
               ${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : moveTag(d.name, it.name, C.num(it.price), true)}
             </li>`).join('')}</ul></div>`).join('') : `<p class="empty">${esc(t('menuEmpty'))}</p>`}
         <form class="panel form add-item" data-submit="draftAddItem" novalidate>
@@ -1791,6 +1803,23 @@
       const h = S.hist && S.hist.list[+el.dataset.i]; if (!h) return;
       if (h.gid !== S.gid) setGroup(h.gid, true);
       go('cart', { id: h.cid, tab: 'mine' });
+    },
+    jumpCat: el => { const g = document.getElementById(el.dataset.target); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+    autoSortMenu: () => {
+      if (S.confirmKey !== 'autoSort') { syncDraft(); S.confirmKey = 'autoSort'; return render(true); }
+      S.confirmKey = null; syncDraft();
+      let n = 0;
+      for (const it of S.draft.items) { const c = C.autoCategory(it.name); if (c && c !== it.category) { it.category = c; n++; } }
+      // keep sections together: section order as the list goes, items in their old order inside it
+      const groups = groupByCategory(S.draft.items); S.draft.items = groups.flatMap(g => g.items);
+      render(true); toast(t('autoSorted', { n }));
+    },
+    renameCat: el => {
+      syncDraft();
+      const old = el.dataset.cat, v = (window.prompt(t('renameCatPrompt'), old) || '').trim();
+      if (!v || v === old) return;
+      for (const it of S.draft.items) if ((it.category || '') === old) it.category = v;
+      render(true);
     },
     logoRemove: () => { if (!S.draft) return; syncDraft(); S.draft.logo = ''; render(true); },
     admTab: el => { S.adm.tab = el.dataset.tab; S.confirmKey = null; render(true); },
@@ -3144,6 +3173,13 @@
     copyFrom: el => { S.copyFrom = el.value; },
     admSettled: el => { S.adm.showSettled = el.checked; render(true); },
     itemName: () => syncDraft(),
+    itemCat: el => {
+      syncDraft();
+      const it = S.draft && S.draft.items.find(i => i.id === el.dataset.id); if (!it) return;
+      let v = el.value;
+      if (v === '__new') { v = (window.prompt(t('newCatPrompt')) || '').trim(); if (!v) return render(true); }
+      it.category = v; render(true); toast(t('movedTo', { c: v || t('otherCat') }));
+    },
     itemPrice: () => syncDraft()
   };
 
