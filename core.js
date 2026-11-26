@@ -61,6 +61,7 @@
     return /[.!،,]$/.test(s) || words > 6 || s.length > 38;
   }
   /* screenshots (Talabat app): screen furniture that is never a menu item */
+  const BOLD = '\u2063';   // marks a line printed in black/bold (item names) by the screenshot reader
   const OCR_NOISE = /(طلب جماعي|طلب جماعى|أضف منتجات|اضف منتجات|لتبدأ الطلب|لتبدا الطلب|الحد الأدنى|الحد الادنى|رسوم التوصيل|التوصيل خلال|توصيل مجاني|عرض السلة|اعرض السلة|ابحث في|ابحث عن|تقييم|مراجعات|دقيقة|دقائق|مفتوح الآن|مغلق|الأكثر طلب|الاكثر طلب|sponsored|min\.? ?order|delivery fee|view (basket|cart)|group order|add items worth|to start your order|talabat|طلبات برو|talabat pro)/i;
   const letterCount = s => (String(s).match(/[\p{L}]/gu) || []).length;
   // a line from a screenshot worth reading: enough letters, not mostly symbols and digits (status bar, icons)
@@ -77,6 +78,8 @@
     const name = w.join(' ').trim();
     return w.some(x => letterCount(x) >= 3) && letterCount(name) >= 4 ? name : '';
   }
+  // a section title read from a screenshot: a few real words, no stray letters
+  const okCategory = c => !!c && c.split(' ').length <= 4 && c.split(' ').every(x => letterCount(x) >= 2);
   // the gray line under an item name: ends with a full stop or "and…", has a full stop inside, is long, or repeats the name and adds to it
   function ocrDescription(line, before) {
     if (looksLikeDescription(line) || /\.\s*\S/.test(line) || /\s(و|او|أو|مع|ب)$/.test(line)) return true;
@@ -137,12 +140,23 @@
       buf = [];
       if (!lines.length) return;
       if (opts.ocr) {
-        // Talabat card: [section title] / name / description / price. Drop the description, keep the name.
-        const keep = lines.slice();
+        // Talabat card: [section title] / name / description / price. Names are black and bold, descriptions gray.
+        const bolds = lines.filter(l => l.startsWith(BOLD));
+        if (bolds.length) {
+          const nm = cleanOcrName(bolds[bolds.length - 1].slice(1));
+          if (bolds.length >= 2) { const c = cleanOcrName(bolds[bolds.length - 2].slice(1)); if (okCategory(c) && similarity(c, nm) < 0.5) category = c; }
+          if (nm && price > 0) items.push({ name: nm, price: round2(price), category });
+          else if (nm) skipped.push(nm);
+          return;
+        }
+        // no ink information: the name is the line before the first description line
+        const keep = [];
+        for (const l of lines) { if (keep.length && ocrDescription(l, keep[keep.length - 1])) break; keep.push(l); }
+        while (keep.length > 1 && ocrDescription(keep[keep.length - 1], keep[keep.length - 2])) keep.pop();
         while (keep.length > 1 && ocrDescription(keep[keep.length - 1], keep[keep.length - 2])) keep.pop();
         if (keep.length === 1 && looksLikeDescription(keep[0]) && lines.length === 1) { skipped.push(lines[0]); return; }
         const nm = cleanOcrName(keep[keep.length - 1]);
-        if (keep.length >= 2 && keep[0].length <= 30) { const c = cleanOcrName(keep[keep.length - 2]); if (c && similarity(c, nm) < 0.5) category = c; }
+        if (keep.length >= 2 && keep[0].length <= 30) { const c = cleanOcrName(keep[keep.length - 2]); if (okCategory(c) && similarity(c, nm) < 0.5) category = c; }
         if (!nm) return;
         if (price > 0) items.push({ name: nm, price: round2(price), category });
         else skipped.push(nm);
@@ -170,7 +184,7 @@
     let lines = String(text || '').replace(/[\u200e\u200f\u202a-\u202e]/g, '').split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim());
     // screenshots: drop screen furniture first, and the stray comma OCR leaves at line ends.
     // Wrapped description lines are not joined: each one is recognised as description on its own.
-    if (opts.ocr) lines = lines.filter(l => l && !OCR_NOISE.test(l)).map(l => l.replace(/[\s،,]+$/, ''));
+    if (opts.ocr) lines = lines.filter(l => l && !OCR_NOISE.test(l) && (l.match(/\|/g) || []).length < 2).map(l => l.replace(/[\s،,]+$/, ''));
     for (const line of lines) {
       if (!line) continue;
       const latin = latinDigits(line);
@@ -640,7 +654,7 @@
     return { km: round2(km), limit, state: km <= limit ? 'near' : 'far' };
   }
 
-  const api = { distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
+  const api = { distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TarweeqaCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

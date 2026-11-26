@@ -2133,6 +2133,39 @@
     });
   }
   // keep dark text, drop photos and coloured badges, so the reader sees clean black-on-white text
+  /* Big solid blocks (dish photos, banners with pictures) next to the item names confuse the reader.
+     Find them on a coarse grid: cells that are mostly not-white, joined into blocks that are big and dense, but not full width. */
+  function photoMask(a, w, h, dark) {
+    const cs = 16, gw = Math.ceil(w / cs), gh = Math.ceil(h / cs);
+    const busy = new Uint8Array(gw * gh);
+    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+      let n = 0, on = 0;
+      for (let y = gy * cs; y < Math.min(h, gy * cs + cs); y += 2) for (let x = gx * cs; x < Math.min(w, gx * cs + cs); x += 2) {
+        const i = (y * w + x) * 4; let r = a[i], g = a[i + 1], b = a[i + 2];
+        if (dark) { r = 255 - r; g = 255 - g; b = 255 - b; }
+        n++; if ((r + g + b) / 3 < 225 || Math.max(r, g, b) - Math.min(r, g, b) > 40) on++;
+      }
+      busy[gy * gw + gx] = on / n > 0.72 ? 1 : 0;
+    }
+    const cut = new Uint8Array(gw * gh), seen = new Uint8Array(gw * gh), stack = [];
+    for (let s0 = 0; s0 < busy.length; s0++) {
+      if (!busy[s0] || seen[s0]) continue;
+      let x0 = gw, y0 = gh, x1 = 0, y1 = 0, count = 0; stack.push(s0); seen[s0] = 1;
+      while (stack.length) {
+        const k = stack.pop(), x = k % gw, y = (k / gw) | 0; count++;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+          const q = ny * gw + nx; if (busy[q] && !seen[q]) { seen[q] = 1; stack.push(q); }
+        }
+      }
+      const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+      if (bw * cs >= w * 0.12 && bh * cs >= 70 && bw * cs <= w * 0.75 && count / (bw * bh) >= 0.45) {
+        for (let y = Math.max(0, y0 - 1); y <= Math.min(gh - 1, y1 + 1); y++) for (let x = Math.max(0, x0 - 1); x <= Math.min(gw - 1, x1 + 1); x++) cut[y * gw + x] = 1;
+      }
+    }
+    return { at: p => cut[(((p / w) | 0) / cs | 0) * gw + ((p % w) / cs | 0)] };
+  }
   async function cleanImage(file) {
     const url = URL.createObjectURL(file);
     const img = new Image(); img.src = url; await img.decode();
@@ -2142,10 +2175,13 @@
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, w, h);
     const d = x.getImageData(0, 0, w, h), a = d.data;
+    const orig = new Uint8ClampedArray(a);
     // dark-mode screenshots: invert first so text is dark
     let sum = 0; for (let i = 0; i < a.length; i += 400) sum += a[i] + a[i + 1] + a[i + 2];
     const dark = sum / (a.length / 400) / 3 < 110;
+    const photo = photoMask(a, w, h, dark);
     for (let i = 0; i < a.length; i += 4) {
+      if (photo.at(i >> 2)) { a[i] = a[i + 1] = a[i + 2] = 255; continue; }   // food photos and buttons: blank, so their noise is not read as text
       let r = a[i], g = a[i + 1], b = a[i + 2];
       if (dark) { r = 255 - r; g = 255 - g; b = 255 - b; }
       const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
@@ -2155,7 +2191,19 @@
       a[i] = a[i + 1] = a[i + 2] = v;
     }
     x.putImageData(d, 0, 0);
-    return { canvas: c, url };
+    /* how dark a line's ink is: item names are bold black, descriptions are gray.
+       Average of the darkest pixels inside the line's box (0 = black, 255 = white). */
+    const ink = (x0, y0, x1, y1) => {
+      const hist = new Uint32Array(256); let n = 0;
+      for (let yy = Math.max(0, y0); yy < Math.min(h, y1); yy++) for (let xx = Math.max(0, x0); xx < Math.min(w, x1); xx++) {
+        const i = (yy * w + xx) * 4; let l = (orig[i] + orig[i + 1] + orig[i + 2]) / 3; if (dark) l = 255 - l;
+        hist[l | 0]++; n++;
+      }
+      const want = Math.max(1, n * 0.04); let got = 0, sum = 0;
+      for (let v = 0; v < 256 && got < want; v++) { const k = Math.min(hist[v], want - got); got += k; sum += k * v; }
+      return got ? sum / got : 255;
+    };
+    return { canvas: c, url, ink };
   }
   async function ocrWorkers(status) {
     const base = CFG.ocrPath || 'ocr/';
@@ -2170,7 +2218,7 @@
   function lineList(data) {
     const out = [];
     for (const b of data.blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) {
-      out.push({ text: (l.text || '').trim(), conf: l.confidence || 0, y0: l.bbox.y0, y1: l.bbox.y1 });
+      out.push({ text: (l.text || '').trim(), conf: l.confidence || 0, y0: l.bbox.y0, y1: l.bbox.y1, x0: l.bbox.x0, x1: l.bbox.x1 });
     }
     return out;
   }
@@ -2180,7 +2228,7 @@
     const lines = [], thumbs = [];
     for (let i = 0; i < files.length; i++) {
       status(t('shotsReading', { i: i + 1, n: files.length }));
-      const { canvas, url } = await cleanImage(files[i]);
+      const { canvas, url, ink } = await cleanImage(files[i]);
       thumbs.push(url);
       const [ra, re] = await Promise.all([S.ocrAr.recognize(canvas, {}, { blocks: true }), S.ocrEn.recognize(canvas, {}, { blocks: true })]);
       const A = lineList(ra.data), E = lineList(re.data);
@@ -2195,14 +2243,15 @@
         // English menus: the Arabic model invents letters on Latin text, so trust a confident English reading of real words
         const latinWords = best ? (best.text.match(/[A-Za-z]{3,}/g) || []).length : 0;
         const useAr = arabic >= 3 ? !(best && ((best.conf >= 85 && a.conf < 55) || (latinWords >= 2 && best.conf >= 70 && best.conf > a.conf + 5))) : (arabic > 0 && (!best || a.conf + 8 >= best.conf));
-        lines.push({ ar: useAr ? a.text : en, en });
+        lines.push({ ar: useAr ? a.text : en, en, ink: Math.round(ink(a.x0, a.y0, a.x1, a.y1)) });
       }
       lines.push({ sep: true, ar: '', en: '' });
     }
     return { lines, thumbs };
   }
   /* one readable line for the menu parser: the name as read, the price as the English model read it */
-  function lineText(l) {
+  function lineText(l) { const s = lineText0(l); return l.ink != null && l.ink < 60 && s && !/\d[.,]\d{2}/.test(C.latinDigits(s)) ? C.BOLD + s : s; }
+  function lineText0(l) {
     const price = (C.latinDigits(l.en).match(/\d{1,5}[.,]\d{2}(?!\d)/g) || []).pop();
     if (!/[؀-ۿ]/.test(l.ar)) return l.ar || l.en;
     if (!price) return l.ar;
@@ -2222,7 +2271,9 @@
       // each screenshot may be a different order: read them one by one (one part per file)
       const parts = [{ fi: 0, lines: [] }];
       for (const l of lines) { if (l.sep) parts.push({ fi: parts.length, lines: [] }); else parts[parts.length - 1].lines.push(l); }
-      const receipts = parts.filter(p => p.lines.length).map(p => Object.assign(C.parseReceipt(p.lines), { fi: p.fi })).filter(r => r.items.length);
+      // a picture is an order receipt only if it reads like one: priced items plus an order number, totals or fees
+      const receipts = parts.filter(p => p.lines.length).map(p => Object.assign(C.parseReceipt(p.lines), { fi: p.fi }))
+        .filter(r => r.items.some(i => i.unit != null) && (r.orderNo || r.total != null || r.subtotal != null || r.fees.length));
       if (receipts.length) {
         const seenOrders = new Set();
         let updated = 0, added = 0, dup = 0, orders = 0, unsure = 0, older = 0, saved = 0, savedDup = 0;
