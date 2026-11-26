@@ -1,6 +1,6 @@
 /* ترويقة — service worker: يخلي البرنامج يفتح بسرعة ويتثبت على الموبايل
    Caches the app shell only. Live cart data always comes from Firebase. */
-const CACHE = 'tarweeqa-v5';
+const CACHE = 'tarweeqa-2611261103';
 const SHELL = ['./', 'index.html', 'styles.css', 'config.js', 'i18n.js', 'core.js', 'store.js', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -16,9 +16,9 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(e.request, copy));
+    // no-cache: always ask the server (cheap 304 when nothing changed), so a new version shows on the next open
+    fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }).then(res => {
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
       return res;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
   );

@@ -2635,7 +2635,11 @@
 
   try {
     if ('serviceWorker' in navigator && location.protocol === 'https:' && window.top === window.self && (CFG.firebase || CFG.supabase)) {
-      navigator.serviceWorker.register('sw.js').catch(() => { });
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => { reg.update().catch(() => { }); }).catch(() => { });
+      // a new version took over: reload once so the screen runs the new code
+      const hadController = !!navigator.serviceWorker.controller;   // first visit: no reload needed
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloaded || !hadController) return; reloaded = true; location.reload(); });
     }
   } catch (e) { }
 
