@@ -1512,6 +1512,8 @@
       if (Math.abs(gap) >= 0.05) charges.push({ id: rid(6), kind: gap < 0 ? 'discount' : 'other', label: t('receiptAdjust'), amount: Math.abs(gap), split: 'share', adjust: true });
       patch(c, { charges }); toast(t('adjustedToPaid'));
     },
+    issueOnly: async () => { const c = curCart(); await issueInvoices(c); render(true); toast(t('invoicesReady')); },
+    markSent: el => { const c = curCart(); const k = el.dataset.key; if (c.invoices && c.invoices[k]) c.invoices[k].sentAt = Date.now(); patch(c, { ['invoices.' + k + '.sentAt']: Date.now() }); setTimeout(() => render(true), 300); },
     clearChecks: () => { const c = curCart(); c.checked = {}; render(true); patch(c, { checked: {} }); },
     delShared: el => { const c = curCart(); patch(c, { shared: (c.shared || []).filter(x => x.id !== el.dataset.id) }); },
     shAll: () => document.querySelectorAll('.sh-people input').forEach(i => { i.checked = true; }),
@@ -2172,7 +2174,6 @@
     const base = 'TQ-' + ymd(c.createdAt) + '-' + c.id.replace(/[^a-z0-9]/gi, '').slice(-4).toUpperCase();
     const p = { invoiceKey: secret, invoicesAt: Date.now() };
     bill.rows.forEach((r, i) => {
-      if (r.isHost) return;
       p['invoices.' + r.key] = {
         no: base + '-' + String(i + 1).padStart(2, '0'), issuedAt: Date.now(), name: r.name, phone: r.phone || '',
         items: r.items.map(it => {
@@ -2181,7 +2182,7 @@
           return { name: it.name, qty, unit, total: C.round2(unit * qty), note: it.note || '', askedFor: it.askedFor || '', prev: mv ? mv.prev : null };
         }),
         subtotal: r.subtotal, lines: r.lines.map(l => ({ label: l.label, value: l.value, kind: l.kind })),
-        exact: r.exact, total: r.total, prev: r.prev, net: r.net,
+        exact: r.exact, total: r.total, prev: r.isHost ? 0 : r.prev, net: r.isHost ? r.total : r.net, self: !!r.isHost,
         receiptNo: c.receiptNo || '', receiptDate: c.receiptDate || '', people: bill.people, orderFood: bill.food, orderGrand: bill.grand,
         splitNote: (c.charges || []).filter(ch => C.num(ch.amount)).map(ch => ch.label + ': ' + t('split_' + (ch.split || C.DEFAULT_SPLIT[ch.kind] || 'equal'))).join(' · ')
       };
@@ -2252,12 +2253,74 @@
         <tbody>${rows}</tbody>
         <tfoot><tr><td colspan="2">${esc(t('colTotal'))}</td><td class="num tnum">${esc(C.fmtMoney(bill.food))}</td><td class="num tnum">${esc(C.fmtMoney(bill.chargesTotal))}</td><td class="num tnum"><b>${esc(C.fmtMoney(bill.collected))}</b></td><td></td></tr></tfoot>
       </table></div>
+      ${collectSheet(c, bill)}
       ${!bill.rows.some(r => !r.isHost) ? `<p class="banner soft">${esc(t('noOneElse'))}</p>` : sender || `<p class="muted small-text send-to">${esc(t('willSendTo', { s: bill.rows.filter(r => !r.isHost).map(r => r.name + (r.phone ? '' : ' ' + t('noPhoneTag'))).join(comma()) }))}</p><button class="primary block big" data-act="issueInvoices">${esc(issued ? (stale ? t('reissueSend') : t('sendAgain')) : t('issueSend'))}</button>
         ${issued ? `<p class="muted small-text">${esc(t('issuedAt', { n: issued, t: fmtTime(c.invoicesAt || Date.now()) }))}${stale ? ' ' + esc(t('staleNote')) : ''}</p>` : `<p class="muted small-text">${esc(t('issueHint'))}</p>`}
         ${(() => { const un = bill.rows.filter(r => !r.isHost && (r.state === 'unpaid' || r.state === 'partial')); return un.length ? `<button class="secondary block remind-btn" data-act="remindUnpaid">🔔 ${esc(t('remindUnpaid', { n: un.length }))}</button>
           <p class="muted small-text">${esc(t('remindUnpaidHint', { s: un.map(r => r.name).join(comma()) }))}</p>` : ''; })()}`}
     </section>`;
   }
+  /* ---------- the collection sheet: sent? paid? how much came in? ---------- */
+  function collectSheet(c, bill) {
+    const inv = c.invoices || {};
+    const pays = c.payments || {};
+    const others = bill.rows.filter(r => !r.isHost);
+    if (!others.length) return '';
+    const host = bill.rows.find(r => r.isHost);
+    let due = 0, got = 0;
+    const row = r => {
+      const one = inv[r.key];
+      const stale = one && Math.abs(C.num(one.net) - C.num(r.net)) > 0.009;
+      const P = pays[r.key];
+      const recv = P && P.status === 'confirmed' ? C.num(P.amount) : 0;
+      const reported = P && P.status === 'reported';
+      const need = Math.max(0, C.num(r.net));
+      due += need; got += recv;
+      const diff = C.round2(recv - need);
+      const phone = (one && one.phone) || r.phone;
+      let send;
+      if (!one || stale) send = `<button class="secondary small" data-act="issueOnly">${esc(one ? t('updateInvoice') : t('makeInvoice'))}</button>`;
+      else if (phone) send = `<a class="wa small" data-act="markSent" data-keep="1" data-key="${esc(r.key)}" href="${esc(waLink(phone, invoiceMessage(c, r.key)))}" target="_blank" rel="noopener">${waIcon()} ${esc(one.sentAt ? t('sendAgainOne') : t('sendOne'))}</a>`;
+      else send = `<button class="secondary small" data-act="copyInvoiceLink" data-text="${esc(invoiceMessage(c, r.key))}">${esc(t('copyInvoiceMsg'))}</button>`;
+      return `<li class="cs-row${recv >= need - 0.009 && need > 0 ? ' paid' : ''}">
+        <div class="cs-top"><b>${esc(r.name)}</b><span class="tnum cs-due">${esc(money(need))}</span></div>
+        <div class="cs-sent">${one && one.sentAt ? `<span class="sent-ok">✓ ${esc(t('sentAt', { t: fmtTime(one.sentAt) }))}</span>` : `<span class="muted">${esc(t('notSent'))}</span>`}
+          ${one ? `<button class="link-btn" data-act="previewInvoice" data-key="${esc(r.key)}">${esc(t('viewInvoice'))}</button>` : ''}${send}</div>
+        <div class="cs-pay">
+          <label class="chip-check"><input type="checkbox" data-change="paidToggle" data-key="${esc(r.key)}" ${recv > 0 && recv >= need - 0.009 ? 'checked' : ''}><span>${esc(t('paidCheck'))}</span></label>
+          <label class="cs-amt"><span>${esc(t('received'))}</span><input class="tnum" inputmode="decimal" data-change="paidAmount" data-key="${esc(r.key)}" value="${recv ? esc(C.fmtMoney(recv)) : ''}" placeholder="0"></label>
+          <span class="cs-diff tnum ${!recv ? 'muted' : diff < -0.009 ? 'short' : diff > 0.009 ? 'over' : 'even'}">${!recv ? (reported ? esc(t('payReported')) : '—') : diff < -0.009 ? esc(t('shortBy', { a: C.fmtMoney(-diff) })) : diff > 0.009 ? esc(t('overBy', { a: C.fmtMoney(diff) })) : '✓'}</span>
+        </div>
+        ${reported ? `<p class="small-text muted">${esc(t('reportedSays', { m: t('method_' + (P.method || 'instapay')) + ' ' + C.fmtMoney(P.amount) }))} <button class="link-btn" data-act="confirmPay" data-key="${esc(r.key)}">✓ ${esc(t('confirm'))}</button></p>` : ''}
+      </li>`;
+    };
+    const list = others.map(row).join('');
+    const gap = C.round2(got - due);
+    const myInv = host && inv[host.key];
+    const myPhone = S.profile && S.profile.phone;
+    const paidTalabat = C.num(c.receiptTotal) || bill.grand;
+    const shouldCollect = C.round2(paidTalabat - (host ? host.total : 0));
+    return `<div class="collect">
+      <p class="label">💰 ${esc(t('collectTitle'))}</p>
+      <ul class="cs-list">${list}</ul>
+      <div class="cs-sum tnum">
+        <div><span>${esc(t('csDue'))}</span><b>${esc(money(due))}</b></div>
+        <div><span>${esc(t('csGot'))}</span><b>${esc(money(got))}</b></div>
+        <div class="${gap < -0.009 ? 'short' : gap > 0.009 ? 'over' : 'even'}"><span>${esc(gap < -0.009 ? t('csShort') : gap > 0.009 ? t('csOver') : t('csEven'))}</span><b>${esc(gap ? money(Math.abs(gap)) : '✓')}</b></div>
+      </div>
+      <p class="muted small-text tnum">${esc(t('csCheck', { p: money(paidTalabat), m: money(host ? host.total : 0), c: money(shouldCollect) }))}${(() => {
+        const thisOrder = C.round2(others.reduce((a, r) => a + C.num(r.total), 0));
+        const old = C.round2(due - thisOrder), round = C.round2(thisOrder - shouldCollect);
+        return (Math.abs(round) > 0.009 ? ' ' + esc(t('csRound', { a: (round > 0 ? '+' : '−') + C.fmtMoney(Math.abs(round)) })) : '') + (Math.abs(old) > 0.009 ? ' ' + esc(t('csOld', { a: (old > 0 ? '+' : '−') + C.fmtMoney(Math.abs(old)) })) : '');
+      })()}</p>
+      ${host ? `<div class="cs-me"><b>${esc(t('myInvoice'))}</b> <span class="tnum">${esc(money(host.total))}</span>
+        ${myInv ? `<button class="secondary small" data-act="previewInvoice" data-key="${esc(host.key)}">${esc(t('viewInvoice'))}</button>
+          ${myPhone ? `<a class="wa small" href="${esc(waLink(myPhone, invoiceMessage(c, host.key)))}" target="_blank" rel="noopener">${waIcon()} ${esc(t('sendToMe'))}</a>` : ''}`
+          : `<button class="secondary small" data-act="issueOnly">${esc(t('makeInvoice'))}</button>`}
+        <p class="muted small-text">${esc(t('myInvoiceHint'))}</p></div>` : ''}
+    </div>`;
+  }
+
   function invoiceData(c, key) {
     return { invoice: c.invoices[key], payment: (c.payments || {})[key], restaurant: c.restaurant, title: c.title, createdAt: c.createdAt,
       ownerName: c.ownerName, ownerPhone: c.ownerPhone, payInfo: c.payInfo, groupName: S.group && S.group.name, link: invoiceLink(c, key) };
@@ -2368,6 +2431,21 @@
     },
     chPerson: el => { const c = curCart(); const list = clone(c.charges); list[+el.dataset.i].person = el.value; patch(c, { charges: list }); },
     roundUp: el => patch(curCart(), { roundUp: el.checked }),
+    paidToggle: el => {
+      const c = curCart(), k = el.dataset.key;
+      const r = C.computeBill(c, prevFor(c)).rows.find(x => x.key === k); if (!r) return;
+      const old = (c.payments || {})[k];
+      const v = el.checked ? { amount: C.round2(Math.max(0, r.net)), method: (old && old.method) || 'instapay', status: 'confirmed', at: Date.now(), by: me() } : null;
+      c.payments = Object.assign({}, c.payments, { [k]: v || undefined }); render(true);
+      patch(c, { ['payments.' + k]: v || undefined });
+    },
+    paidAmount: el => {
+      const c = curCart(), k = el.dataset.key, a = C.round2(C.num(el.value));
+      const old = (c.payments || {})[k];
+      const v = a > 0 ? { amount: a, method: (old && old.method) || 'instapay', status: 'confirmed', at: Date.now(), by: me() } : null;
+      c.payments = Object.assign({}, c.payments, { [k]: v || undefined }); render(true);
+      patch(c, { ['payments.' + k]: v || undefined });
+    },
     paidActual: el => { const v = C.round2(C.num(el.value)); patch(curCart(), { receiptTotal: v > 0 ? v : null }); },
     checkLine: el => { const c = curCart(); c.checked = Object.assign({}, c.checked, { [el.dataset.id]: el.checked || undefined }); render(true); patch(c, { ['checked.' + el.dataset.id]: el.checked ? true : null }); },
     sharedName: el => { const c = curCart(); const it = (c.menu || []).find(i => C.sameItem(i.name, el.value)); const pr = $('#sh-price'); if (it && pr && !pr.value) pr.value = it.price; },

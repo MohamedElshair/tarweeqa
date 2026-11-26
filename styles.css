@@ -605,3 +605,31 @@ button[disabled] { opacity: .45; cursor: not-allowed; }
 .perm-list { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 8px; }
 .perm-list li { display: grid; gap: 2px; font-size: 14px; }
 .send-top { margin: 4px 0 2px; }
+
+/* collection sheet */
+.collect { margin-top: 14px; display: grid; gap: 10px; }
+.cs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cs-row { border: 1px solid var(--line, #e3e6e3); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px; background: #fff; }
+.cs-row.paid { border-color: #8cc7a3; background: #f4fbf6; }
+.cs-top { display: flex; justify-content: space-between; align-items: center; font-size: 16px; }
+.cs-due { font-weight: 700; }
+.cs-sent { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; }
+.cs-sent .wa, .cs-sent .secondary { margin-inline-start: auto; }
+.sent-ok { color: #157f3d; font-weight: 600; }
+.cs-pay { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cs-amt { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; }
+.cs-amt input { width: 84px; padding: 6px 8px; border: 1px solid var(--line, #dfe3df); border-radius: 8px; font: inherit; }
+.cs-diff { margin-inline-start: auto; font-weight: 700; font-size: 13.5px; }
+.cs-diff.short, .cs-sum .short b { color: #b42318; }
+.cs-diff.over, .cs-sum .over b { color: #9a5b00; }
+.cs-diff.even, .cs-sum .even b { color: #157f3d; }
+.cs-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; background: #f6f8f6; border-radius: 12px; padding: 10px; }
+.cs-sum div { display: grid; gap: 2px; font-size: 13px; }
+.cs-sum b { font-size: 16px; }
+.cs-me { border-top: 1px dashed var(--line, #dfe3df); padding-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cs-me p { flex-basis: 100%; margin: 0; }
+.wa.small { padding: 6px 12px; font-size: 13.5px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.cs-pay { flex-wrap: nowrap; }
+.cs-pay .chip-check { flex: none; }
+.cs-amt { flex: none; }
+.cs-amt input { width: 88px !important; min-width: 0; flex: none; margin: 0; }

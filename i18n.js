@@ -1,6 +1,12 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    csRound: 'التقريب لأقرب جنيه {a}.', csOld: 'والمطلوب فيه {a} حسابات قديمة من طلبات قبل كده.',
+    collectTitle: 'كشف التحصيل', updateInvoice: 'حدّث الفاتورة', makeInvoice: 'اطلع الفاتورة', sendOne: 'ابعت', sendAgainOne: 'ابعت تاني',
+    sentAt: 'اتبعتت {t}', notSent: 'لسه ما اتبعتتش', paidCheck: 'دفع', received: 'اتحوّل', shortBy: 'ناقص {a}', overBy: 'زيادة {a}',
+    csDue: 'المطلوب من الناس', csGot: 'اللي اتحصّل', csShort: 'عجز', csOver: 'زيادة', csEven: 'مظبوط',
+    csCheck: 'دفعت لطلبات {p}، نصيبك {m}، يعني المفروض يتلم {c}.', myInvoice: 'فاتورتك', sendToMe: 'ابعتها لنفسي',
+    myInvoiceHint: 'ابعت فاتورتك لنفسك على الواتساب تشوف شكلها بالظبط قبل ما تبعت للناس.', invoicesReady: 'الفواتير جاهزة',
     sendInvoicesTop: 'ابعت فاتورة لكل واحد على الواتساب ({n})', sendInvoicesTopHint: 'هيجهّز فاتورة كل واحد بتفاصيلها ورابط الدفع، وإنت بتدوس إرسال لكل واحد.',
     memberNoOrder: 'مفيش طلب مفتوح دلوقتي. لما المسؤول يفتح طلب هيوصلك اللينك.', roleMember: 'عضو',
     permsTitle: 'الصلاحيات', permsAdmin: 'يفتحوا الطلبات، يضيفوا ويعدلوا ويمسحوا المطاعم والأسعار، يرفعوا الإيصالات، ويديروا الحسابات.',
@@ -195,6 +201,12 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    csRound: 'Rounding {a}.', csOld: 'The amount due includes {a} from earlier orders.',
+    collectTitle: 'Collection sheet', updateInvoice: 'Update invoice', makeInvoice: 'Make invoice', sendOne: 'Send', sendAgainOne: 'Send again',
+    sentAt: 'sent {t}', notSent: 'not sent yet', paidCheck: 'Paid', received: 'Received', shortBy: '{a} short', overBy: '{a} extra',
+    csDue: 'Due from people', csGot: 'Collected', csShort: 'Short', csOver: 'Extra', csEven: 'Even',
+    csCheck: 'You paid Talabat {p}, your share is {m}, so {c} should come in.', myInvoice: 'Your invoice', sendToMe: 'Send to myself',
+    myInvoiceHint: 'Send your own invoice to yourself on WhatsApp to see exactly how it looks before sending to others.', invoicesReady: 'Invoices ready',
     sendInvoicesTop: 'Send each person their invoice on WhatsApp ({n})', sendInvoicesTopHint: 'Prepares each invoice with details and the pay link; you tap send for each person.',
     memberNoOrder: 'No open order right now. When an admin starts one you will get the link.', roleMember: 'Member',
     permsTitle: 'Permissions', permsAdmin: 'Start orders, add, edit and delete restaurants and prices, upload receipts, manage the money.',
