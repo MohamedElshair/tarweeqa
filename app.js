@@ -971,11 +971,13 @@
         </div>${pi.instapayLink ? `<p class="muted small-text">✓ ${esc(t('instaLinkOk', { h: pi.instapay || '' }))}</p>` : ''}` : payButtons(pi, myRow && placed ? (myRow.remaining || myRow.net || 0) : 0)}
       </section>` : '';
     return `<section class="stack">
-      ${!placed ? `<p class="banner soft">${esc(host ? t('billBeforeHost') : t('billBefore'))}</p>` : ''}
+      ${!placed && !(host && st === 'closed') ? `<p class="banner soft">${esc(host ? t('billBeforeHost') : t('billBefore'))}</p>` : ''}
+      ${host && (placed || st === 'closed') && others.length && !(S.sendQ && S.sendQ.cartId === c.id) ? `<button class="wa big block send-top" data-act="issueInvoices">${waIcon()} ${esc(t('sendInvoicesTop', { n: others.length }))}</button>
+        <p class="muted small-text center">${esc(t('sendInvoicesTopHint'))}</p>` : ''}
       ${host && (placed || st === 'closed') ? receiptPanel(c) : ''}
       ${host ? chargesEditor(c) : ''}
       ${host ? summary : ''}
-      ${host && placed ? combinedInvoice(c, bill) : ''}
+      ${host && (placed || st === 'closed') ? combinedInvoice(c, bill) : ''}
       ${!host && placed && c.invoices && c.invoices[me()] ? `<button class="secondary block" data-act="previewInvoice" data-key="${esc(me())}">${esc(t('viewMyInvoice'))}</button>` : ''}
       ${host && placed ? `<p class="muted small-text">${esc(t('sendAllHint'))}</p>` : ''}
       ${isLocal() && host ? `<p class="muted small-text">${esc(t('demoWaNote'))}</p>` : ''}
@@ -1464,6 +1466,11 @@
     issueInvoices: async () => {
       const c = curCart();
       if (!C.computeBill(c, {}).rows.some(r => r.key !== c.ownerId)) return toast(t('noOneElse'), 'warn');
+      if (c.stage !== 'ordered' && c.stage !== 'settled') {   // sending the bills means it was ordered
+        const p = { stage: 'ordered', closesAt: Math.min(c.closesAt, Date.now()) };
+        if (!(c.charges || []).length) p.charges = chargesFromEstimate(c);
+        Object.assign(c, p); await patch(c, p);
+      }
       const keys = await issueInvoices(c);
       if (!keys || !keys.length) return toast(t('noOneElse'), 'warn');
       startSending(c, keys);
@@ -1893,7 +1900,7 @@
     const sub = rc.subtotal != null ? rc.subtotal : rc.itemsSum;
     const gap = sub != null ? C.round2(sub - food) : 0;
     if (Math.abs(gap) >= 0.05) fromReceipt.push({ id: rid(6), kind: gap < 0 ? 'discount' : 'other', label: t('receiptAdjust'), amount: Math.abs(gap), split: 'share', adjust: true });
-    await patch(c, { members, shared, charges: [...fromReceipt, ...kept], receiptAt: Date.now(), receiptNo: rc.orderNo || '', receiptDate: rc.date || '', receiptTotal: rc.total != null ? rc.total : null });
+    await patch(c, { stage: c.stage === 'settled' ? 'settled' : 'ordered', closesAt: Math.min(c.closesAt, Date.now()), members, shared, charges: [...fromReceipt, ...kept], receiptAt: Date.now(), receiptNo: rc.orderNo || '', receiptDate: rc.date || '', receiptTotal: rc.total != null ? rc.total : null });
     // teach the restaurant: real prices, new items, usual charges
     const r = S.restaurants.find(x => x.id === c.restaurantId);
     const wrongRest = r && rc.restaurant && C.similarity(rc.restaurant, r.name) < 0.34;

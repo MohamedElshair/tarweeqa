@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    sendInvoicesTop: 'ابعت فاتورة لكل واحد على الواتساب ({n})', sendInvoicesTopHint: 'هيجهّز فاتورة كل واحد بتفاصيلها ورابط الدفع، وإنت بتدوس إرسال لكل واحد.',
     memberNoOrder: 'مفيش طلب مفتوح دلوقتي. لما المسؤول يفتح طلب هيوصلك اللينك.', roleMember: 'عضو',
     permsTitle: 'الصلاحيات', permsAdmin: 'يفتحوا الطلبات، يضيفوا ويعدلوا ويمسحوا المطاعم والأسعار، يرفعوا الإيصالات، ويديروا الحسابات.',
     permsMember: 'يطلبوا من المنيو المبعوتة بس، ويشوفوا طلبهم وحسابهم ويدفعوا. مش بيقدروا يعدلوا أو يمسحوا أي حاجة.',
@@ -194,6 +195,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    sendInvoicesTop: 'Send each person their invoice on WhatsApp ({n})', sendInvoicesTopHint: 'Prepares each invoice with details and the pay link; you tap send for each person.',
     memberNoOrder: 'No open order right now. When an admin starts one you will get the link.', roleMember: 'Member',
     permsTitle: 'Permissions', permsAdmin: 'Start orders, add, edit and delete restaurants and prices, upload receipts, manage the money.',
     permsMember: 'Order from the menu they are sent, see their own order and bill, and pay. They cannot edit or delete anything.',
