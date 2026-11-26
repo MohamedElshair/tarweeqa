@@ -70,9 +70,13 @@
   const isOpenStage = st => st === 'voting' || st === 'ordering';
   const isActive = c => ['voting', 'ordering', 'closed'].includes(stageOf(c));
   const isHost = c => c && (c.ownerId === me() || isAdmin());
-  const isAdmin = () => !!(S.group && (S.group.adminIds || []).includes(me()));
+  // the site admin (the person who runs Tarweeqa) manages everything; members only order
+  const person = () => (S.store && S.store.person) || null;
+  const isSiteAdmin = () => !isLocal() && !!(person() && person().isAdmin);
+  const isAdmin = () => isSiteAdmin() || !!(S.group && (S.group.adminIds || []).includes(me()));
   const isOwner = () => !!(S.group && S.group.ownerId === me());
   const ADMIN_ROUTES = ['newOrder', 'restaurants', 'restaurant'];   // members only order: these screens are for admins
+  const needsPin = () => !isLocal() && !!person() && (!person().hasPin || person().mustSetPin);
   const cartById = id => S.carts.find(c => c.id === id) || null;
 
   /* everyone in the group, plus anyone who joined this order */
@@ -157,13 +161,16 @@
     if (!isLocal()) {
       try {
         let url = location.pathname;
-        if (name === 'cart' && S.gid) url = '?g=' + encodeURIComponent(S.gid) + '&c=' + encodeURIComponent(extra.id);
+        if (name === 'admin') url = '?admin';
+        else if (name === 'cart' && S.gid) url = '?g=' + encodeURIComponent(S.gid) + '&c=' + encodeURIComponent(extra.id);
         else if (S.gid) url = '?g=' + encodeURIComponent(S.gid);
         history.replaceState(null, '', url);
       } catch (e) { }
     }
     render(true);
     window.scrollTo(0, 0);
+    if (name === 'profile') loadMyOrders();
+    if (name === 'admin') loadAdmin();
   }
 
   /* ---------- views ---------- */
@@ -180,8 +187,10 @@
     adoptPayLink();
     if (S.fatal) return `<main class="page"><section class="panel"><h2>${esc(t('errFirebase'))}</h2><p class="muted mono">${esc(S.fatal)}</p></section></main>`;
     if (!S.booted) return `<div class="boot">${esc(t('appName'))}</div>`;
-    if (!S.profile || !S.profile.name) return viewWelcome();
-    if (!S.gid || !S.group) return viewStart();
+    if (isLocal() ? (!S.profile || !S.profile.name) : !person()) return viewWelcome();
+    if (needsPin()) return viewSetPin();
+    if (S.route.name === 'admin' && isSiteAdmin()) return viewAdmin();
+    if (!S.gid || !S.group) return (S.route.name === 'profile' && !isLocal()) ? `<main class="page">${back('home')}${viewProfile()}</main>` : viewStart();
     if (ADMIN_ROUTES.includes(S.route.name) && !isAdmin()) S.route = { name: 'home' };
     const r = S.route.name;
     const body = ({
@@ -215,7 +224,7 @@
       <main class="page">${body}</main>
       <nav class="bottom-nav">
         ${tab('home', icoHome(), t('navHome'))}
-        ${isAdmin() ? tab('restaurants', icoMenu(), t('navRestaurants')) : ''}
+        ${isSiteAdmin() ? tab('admin', icoShield(), t('navAdmin')) : isAdmin() ? tab('restaurants', icoMenu(), t('navRestaurants')) : ''}
         ${tab('money', icoCoins(), t('navMoney'), pend ? `<i class="badge tnum">${pend}</i>` : '')}
         ${tab('group', icoPeople(), t('navGroup'))}
       </nav>`;
@@ -227,7 +236,8 @@
   const icoHome = () => svg('M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z');
   const icoMenu = () => svg('M5 4h14v16H5zM8 8h8M8 12h8M8 16h5');
   const icoCoins = () => svg('M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6');
-  const icoPeople = () => svg('M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21c0-3.9 3.1-7 7-7s7 3.1 7 7M16 3.5a4 4 0 0 1 0 7.5M18.5 14.5c2.1.9 3.5 3.3 3.5 6.5');
+  const icoShield = () => svg('M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6zM9 12l2 2 4-4');
+  const icoPeople = () =>svg('M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21c0-3.9 3.1-7 7-7s7 3.1 7 7M16 3.5a4 4 0 0 1 0 7.5M18.5 14.5c2.1.9 3.5 3.3 3.5 6.5');
   function plusIcon() { return `<svg viewBox="0 0 20 20" class="ico" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`; }
   function waIcon() { return `<svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path fill="currentColor" d="M12 2.2a9.7 9.7 0 0 0-8.4 14.6L2.3 21.7l5-1.3A9.7 9.7 0 1 0 12 2.2Zm0 17.7a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 19.9Zm4.4-6c-.2-.1-1.4-.7-1.7-.8-.2-.1-.4-.1-.5.1l-.8.9c-.1.2-.3.2-.5.1a6.6 6.6 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.5-.4h-.5a.9.9 0 0 0-.6.3 2.7 2.7 0 0 0-.9 2c0 1.2.9 2.3 1 2.5.1.2 1.7 2.7 4.2 3.7 1.6.7 2.2.7 3 .6.5-.1 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1l-.5-.4Z"/></svg>`; }
   const wa = (href, label, cls) => `<a class="wa ${cls || 'small'}" href="${esc(href)}" target="_blank" rel="noopener">${waIcon()} ${esc(label)}</a>`;
@@ -247,7 +257,64 @@
   }
 
   /* ---------- welcome & start ---------- */
+  /* sign in / new account (live site). The phone number is the account, the PIN proves it is you. */
+  const pinInput = (id, name, ac) => `<input id="${id}" name="${name}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" dir="ltr" class="pin-input tnum" autocomplete="${ac}">`;
   function viewWelcome() {
+    if (isLocal()) return viewWelcomeDemo();
+    const mode = S.authMode || 'login';
+    const A = S.authMsg;
+    const phone = esc(S.authPhone || '');
+    return `<main class="page welcome">
+      <div class="welcome-mark">${logoSvg()}</div>
+      <h1>${esc(t('welcomeTitle'))}</h1>
+      <p class="lead">${esc(t('welcomeSub'))}</p>
+      <div class="seg auth-seg" role="tablist">
+        <button class="${mode === 'login' ? 'on' : ''}" data-act="authMode" data-m="login" role="tab" aria-selected="${mode === 'login'}">${esc(t('authLogin'))}</button>
+        <button class="${mode === 'signup' ? 'on' : ''}" data-act="authMode" data-m="signup" role="tab" aria-selected="${mode === 'signup'}">${esc(t('authSignup'))}</button>
+      </div>
+      ${mode === 'login' ? `<form class="panel form" data-submit="login" novalidate>
+        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="l-phone" name="phone" type="tel" inputmode="tel" dir="ltr" autocomplete="tel" placeholder="01012345678" value="${phone}"></label>
+        <label class="field"><span>${esc(t('pinLabel'))}</span>${pinInput('l-pin', 'pin', 'current-password')}<small>${esc(t('pinLoginHint'))}</small></label>
+        <p class="form-error" id="w-err"${A ? '' : ' hidden'}>${esc(A || '')}</p>
+        <button class="primary block" type="submit">${esc(t('authLoginBtn'))}</button>
+        <details class="forgot"><summary>${esc(t('forgotPin'))}</summary><p class="muted small-text">${esc(t('forgotPinHint'))}</p></details>
+      </form>` : `<form class="panel form" data-submit="signup" novalidate>
+        <label class="field"><span>${esc(t('yourName'))}</span><input id="s-name" name="name" autocomplete="name"></label>
+        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="s-phone" name="phone" type="tel" inputmode="tel" dir="ltr" autocomplete="tel" placeholder="01012345678" value="${phone}"><small>${esc(t('phoneHintSignup'))}</small></label>
+        <div class="grid2">
+          <label class="field"><span>${esc(t('pinNew'))}</span>${pinInput('s-pin', 'pin', 'new-password')}</label>
+          <label class="field"><span>${esc(t('pinAgain'))}</span>${pinInput('s-pin2', 'pin2', 'new-password')}</label>
+        </div>
+        <small class="muted">${esc(t('pinRule'))}</small>
+        <p class="form-error" id="w-err"${A ? '' : ' hidden'}>${esc(A || '')}</p>
+        <button class="primary block" type="submit">${esc(t('authSignupBtn'))}</button>
+      </form>`}
+      <button class="ghost small center" data-act="lang">${esc(t('langSwitch'))}</button>
+    </main>`;
+  }
+  /* signed in but no PIN yet (accounts from before PINs), or came in with a one-time code from the admin */
+  function viewSetPin() {
+    const p = person();
+    const reset = p.mustSetPin;
+    return `<main class="page welcome">
+      <div class="welcome-mark">${logoSvg()}</div>
+      <h1>${esc(reset ? t('pinResetTitle') : t('pinSetTitle', { name: p.name || '' }))}</h1>
+      <p class="lead">${esc(reset ? t('pinResetSub') : t('pinSetSub'))}</p>
+      <form class="panel form" data-submit="setPinFirst" novalidate>
+        <p class="pay-line"><span>${esc(t('yourPhone'))}</span><code dir="ltr">${esc(localPhone(p.phone))}</code></p>
+        <div class="grid2">
+          <label class="field"><span>${esc(t('pinNew'))}</span>${pinInput('f-pin', 'pin', 'new-password')}</label>
+          <label class="field"><span>${esc(t('pinAgain'))}</span>${pinInput('f-pin2', 'pin2', 'new-password')}</label>
+        </div>
+        <small class="muted">${esc(t('pinRule'))}</small>
+        <p class="form-error" id="f-err" hidden></p>
+        <button class="primary block" type="submit">${esc(t('pinSave'))}</button>
+      </form>
+      <button class="ghost small center" data-act="logout">${esc(t('notMe'))}</button>
+    </main>`;
+  }
+  const localPhone = ph => { const d = String(ph || ''); return /^20\d{10}$/.test(d) ? '0' + d.slice(2) : d; };
+  function viewWelcomeDemo() {
     return `<main class="page welcome">
       <div class="welcome-mark">${logoSvg()}</div>
       <h1>${esc(t('welcomeTitle'))}</h1>
@@ -272,6 +339,13 @@
           : (S.pending.missing ? `<p class="empty">${esc(t('errGroup'))}</p>` : `<div class="loading" aria-busy="true"></div>`)}
       </main>`;
     }
+    if (!isLocal() && !isSiteAdmin()) return `<main class="page welcome">
+      <div class="welcome-mark">${logoSvg()}</div>
+      <h1>${esc(t('hello'))} ${esc(S.profile.name)}</h1>
+      <p class="lead">${esc(t('waitInvite'))}</p>
+      ${S.groups.length ? `<section class="panel"><p class="label">${esc(t('myGroups'))}</p>${S.groups.map(g => `<button class="row-link" data-act="switchGroup" data-id="${esc(g.id)}"><span><strong>${esc(g.name)}</strong></span><span class="chev">›</span></button>`).join('')}</section>` : ''}
+      <div class="btn-row center"><button class="secondary small" data-act="openHistory">${esc(t('myOrders'))}</button><button class="ghost small" data-act="logout">${esc(t('logout'))}</button></div>
+    </main>`;
     return `<main class="page welcome">
       <div class="welcome-mark">${logoSvg()}</div>
       <h1>${esc(t('startTitle'))}</h1>
@@ -1110,7 +1184,7 @@
           <span class="p-main"><strong>${esc(ppl[k].name)}${k === me() ? ` <small class="muted">(${esc(t('you'))})</small>` : ''}</strong>${isAdmin() ? `<small class="muted tnum" dir="ltr">${esc(ppl[k].phone || '')}</small>` : ''}</span>
           <span class="p-side">${k === g.ownerId ? `<span class="chip chip-ordered">${esc(t('roleOwner'))}</span>` : (g.adminIds || []).includes(k) ? `<span class="chip chip-open">${esc(t('roleAdmin'))}</span>` : ''}${ppl[k].guest ? `<span class="chip chip-out">${esc(t('guest'))}</span>` : ''}
           ${isAdmin() && ppl[k].guest ? `<button class="icon-btn" data-act="delGuest" data-key="${esc(k)}" aria-label="${esc(t('delete'))}">×</button>` : ''}
-          ${isOwner() && !ppl[k].guest && k !== g.ownerId && k !== me() ? `<button class="ghost small" data-act="toggleAdmin" data-key="${esc(k)}">${esc((g.adminIds || []).includes(k) ? t('removeAdmin') : t('makeAdmin'))}</button>` : ''}</span>
+</span>
         </li>`).join('')}</ul>
       </section>
       ${isAdmin() ? `<form class="panel form" data-submit="addGuest" novalidate>
@@ -1127,7 +1201,7 @@
         <button class="secondary" type="submit">${esc(t('save'))}</button>
       </form>` : ''}
       ${S.groups.length > 1 ? `<section class="panel"><p class="label">${esc(t('myGroups'))}</p>${S.groups.map(x => `<button class="row-link${x.id === S.gid ? ' on' : ''}" data-act="switchGroup" data-id="${esc(x.id)}"><span><strong>${esc(x.name)}</strong></span><span class="chev">›</span></button>`).join('')}</section>` : ''}
-      ${!isLocal() ? `<details class="panel"><summary>${esc(t('newGroup'))}</summary>
+      ${isSiteAdmin() ? `<details class="panel"><summary>${esc(t('newGroup'))}</summary>
         <form class="form" data-submit="createGroup" novalidate>
           <label class="field"><span>${esc(t('groupName'))}</span><input id="g-new" name="name"></label>
           <button class="secondary" type="submit">${esc(t('createGroup'))}</button>
@@ -1330,10 +1404,12 @@
   /* ---------- profile ---------- */
   function viewProfile() {
     const p = S.profile;
+    const cloud = !isLocal();
     return `<h1>${esc(t('profile'))}</h1>
+      ${cloud ? viewHistory() : ''}
       <form class="panel form" data-submit="profile" novalidate>
         <label class="field"><span>${esc(t('yourName'))}</span><input id="p-name" name="name" value="${esc(p.name)}"></label>
-        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="p-phone" name="phone" type="tel" dir="ltr" value="${esc(p.phone)}"></label>
+        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="p-phone" name="phone" type="tel" dir="ltr" value="${esc(p.phone)}"${cloud ? ` readonly aria-describedby="p-phone-note"` : ''}>${cloud ? `<small id="p-phone-note">${esc(t('phoneIsAccount'))}</small>` : ''}</label>
         <div class="grid2">
           <label class="field"><span>${esc(t('instapayAny'))}</span><input id="p-insta" name="instapay" dir="ltr" value="${esc(instaValue(p))}" placeholder="name@instapay / https://ipn.eg/…"></label>
           <label class="field"><span>${esc(t('wallet'))}</span><input id="p-wallet" name="wallet" type="tel" dir="ltr" value="${esc(p.wallet || '')}"></label>
@@ -1351,7 +1427,255 @@
         <p class="label">${esc(t('language'))}</p>
         <div class="btn-row"><button class="${S.lang === 'ar' ? 'primary' : 'secondary'}" data-act="setLang" data-lang="ar">العربية</button><button class="${S.lang === 'en' ? 'primary' : 'secondary'}" data-act="setLang" data-lang="en">English</button></div>
       </section>
-      ${isLocal() ? `<button class="danger-ghost" data-act="resetDemo">${esc(S.confirmKey === 'reset' ? t('confirmAgain') : t('resetDemo'))}</button>` : `<p class="muted small-text">${esc(t('deviceNote'))}</p>`}`;
+      ${isLocal() ? `<button class="danger-ghost" data-act="resetDemo">${esc(S.confirmKey === 'reset' ? t('confirmAgain') : t('resetDemo'))}</button>` : `
+      <form class="panel form" data-submit="changePin" novalidate>
+        <p class="label">🔒 ${esc(t('pinChangeTitle'))}</p>
+        <div class="grid2">
+          <label class="field"><span>${esc(t('pinOld'))}</span>${pinInput('c-old', 'old', 'current-password')}</label>
+          <label class="field"><span>${esc(t('pinNew'))}</span>${pinInput('c-pin', 'pin', 'new-password')}</label>
+        </div>
+        <p class="form-error" id="c-err" hidden></p>
+        <button class="secondary" type="submit">${esc(t('pinChangeBtn'))}</button>
+      </form>
+      ${isSiteAdmin() ? `<button class="secondary block" data-act="nav" data-to="admin">${icoShield()} ${esc(t('adminTitle'))}</button>` : ''}
+      <button class="danger-ghost" data-act="logout">${esc(t('logout'))}</button>
+      <p class="muted small-text">${esc(t('logoutHint'))}</p>`}`;
+  }
+
+  /* ---------- admin page (site admin only) ---------- */
+  async function loadAdmin() {
+    if (!isSiteAdmin()) return;
+    S.adm = Object.assign({ tab: 'overview' }, S.adm, { loading: !(S.adm && S.adm.data), error: false });
+    render(true);
+    try { S.adm.data = await S.store.adminOverview(); S.adm.loading = false; }
+    catch (e) { console.warn(e); S.adm.loading = false; S.adm.error = true; }
+    if (S.route.name === 'admin') render(true);
+  }
+  // money owed per person across all orders that have bills
+  function adminDebts(D) {
+    const by = {};
+    for (const d of D.dues || []) {
+      if (d.self) continue;
+      const P = d.payment, paid = P && P.status === 'confirmed' ? C.num(P.amount) : 0;
+      const due = Math.max(0, C.round2(C.num(d.net) - paid));
+      const k = d.key;
+      const pp = (D.people || []).find(p => p.uid === k);
+      const x = by[k] || (by[k] = { key: k, name: (pp && pp.name) || d.name, phone: d.phone || (pp && localPhone(pp.phone)) || '', owe: 0, pending: 0, orders: [] });
+      if (P && P.status === 'reported') x.pending = C.round2(x.pending + C.num(P.amount));
+      x.owe = C.round2(x.owe + due);
+      x.orders.push({ rest: d.restaurant || '', at: d.createdAt, net: C.num(d.net), due, paid, reported: P && P.status === 'reported', gid: d.gid, cid: d.cid });
+    }
+    return Object.values(by).sort((a, b) => b.owe - a.owe || b.pending - a.pending || String(a.name).localeCompare(String(b.name)));
+  }
+  function viewAdmin() {
+    const A = S.adm || { tab: 'overview', loading: true };
+    const tab = A.tab || 'overview';
+    const D = A.data;
+    const tabs = [['overview', t('admOverview')], ['people', t('admPeople')], ['rest', t('navRestaurants')], ['groups', t('admGroups')], ['money', t('admMoney')]];
+    let body = '';
+    if (!D) body = A.error ? `<p class="empty">${esc(t('errLoadShort'))}</p><button class="secondary" data-act="admReload">${esc(t('retry'))}</button>` : `<div class="loading" aria-busy="true"></div>`;
+    else body = ({ overview: admOverview, people: admPeople, rest: admRest, groups: admGroups, money: admMoney }[tab] || admOverview)(D);
+    return `<header class="top">
+        <button class="brand" data-act="nav" data-to="home">${logoSvg()}<span class="brand-txt"><b>${esc(t('appName'))}</b><small>${esc(t('adminTitle'))}</small></span></button>
+        <div class="top-actions">
+          <button class="ghost small" data-act="admReload" aria-label="${esc(t('refresh'))}">↻</button>
+          <button class="ghost small" data-act="lang">${esc(t('langSwitch'))}</button>
+          <button class="secondary small" data-act="nav" data-to="home">${esc(t('backToApp'))}</button>
+        </div>
+      </header>
+      <main class="page admin">
+        <h1>${icoShield()} ${esc(t('adminTitle'))}</h1>
+        <nav class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="tab${k === tab ? ' on' : ''}" data-act="admTab" data-tab="${k}">${esc(l)}</button>`).join('')}</nav>
+        <div class="tab-body">${body}</div>
+      </main>`;
+  }
+  function admOverview(D) {
+    const debts = adminDebts(D);
+    const owe = C.round2(debts.reduce((s, x) => s + x.owe, 0));
+    const noPin = D.people.filter(p => !p.hasPin);
+    const locked = D.people.filter(p => p.locked);
+    const orders = D.groups.reduce((s, g) => s + g.carts, 0);
+    return `<div class="summary adm-tiles">
+        <div><span>${esc(t('admPeople'))}</span><strong class="tnum">${D.people.length}</strong></div>
+        <div><span>${esc(t('admGroups'))}</span><strong class="tnum">${D.groups.length}</strong></div>
+        <div><span>${esc(t('admOrders'))}</span><strong class="tnum">${orders}</strong></div>
+        <div><span>${esc(t('navRestaurants'))}</span><strong class="tnum">${S.restaurants.length}</strong></div>
+        <div><span>${esc(t('admUnpaid'))}</span><strong class="tnum${owe > 0 ? ' warn-txt' : ''}">${esc(money(owe))}</strong></div>
+        <div><span>${esc(t('admNoPin'))}</span><strong class="tnum">${noPin.length}</strong></div>
+      </div>
+      ${locked.length ? `<div class="banner warn">🔒 ${esc(t('admLockedNow', { names: locked.map(p => p.name).join(comma()) }))}<button class="secondary small" data-act="admTab" data-tab="people">${esc(t('admPeople'))}</button></div>` : ''}
+      ${noPin.length ? `<div class="banner soft">${esc(t('admNoPinNote', { names: noPin.map(p => p.name).join(comma()) }))}</div>` : ''}
+      <section class="stack">
+        <div class="section-head"><h2>${esc(t('admTopDebts'))}</h2><button class="ghost small" data-act="admTab" data-tab="money">${esc(t('seeAll'))} ›</button></div>
+        ${debts.filter(x => x.owe > 0).length ? `<ul class="people">${debts.filter(x => x.owe > 0).slice(0, 5).map(x => `<li class="person"><span class="avatar sm">${esc(initial(x.name))}</span><span class="p-main"><strong>${esc(x.name)}</strong><small class="muted">${esc(t('admOrdersN', { n: x.orders.filter(o => o.due > 0).length }))}</small></span><span class="p-side"><b class="tnum warn-txt">${esc(money(x.owe))}</b></span></li>`).join('')}</ul>` : `<p class="empty small">${esc(t('nobodyOwes'))}</p>`}
+      </section>
+      <section class="panel">
+        <p class="label">${esc(t('admQuick'))}</p>
+        <div class="btn-row">
+          <button class="primary" data-act="admNewOrder">${plusIcon()} ${esc(t('newOrder'))}</button>
+          <button class="secondary" data-act="admNewRest">${plusIcon()} ${esc(t('addRestaurant'))}</button>
+        </div>
+      </section>`;
+  }
+  function admPeople(D) {
+    const q = (S.adm.q || '').trim().toLowerCase();
+    const gname = id => ((D.groups.find(g => g.id === id) || {}).name) || '';
+    const list = D.people.filter(p => !q || String(p.name).toLowerCase().includes(q) || String(p.phone).includes(q.replace(/^0/, '')));
+    const code = S.adm.code;
+    return `${code ? `<section class="panel code-box">
+        <p class="label">${esc(t('admCodeFor', { name: code.name }))}</p>
+        <p class="pin-code tnum" dir="ltr">${esc(code.code)}</p>
+        <p class="muted small-text">${esc(t('admCodeHint'))}</p>
+        <div class="btn-row">
+          ${wa(waLink(localPhone(code.phone), t('msgPinCode', { name: code.name, code: code.code, link: baseUrl() })), t('sendWa'), 'block')}
+          <button class="secondary" data-act="copy" data-text="${esc(code.code)}">${esc(t('copy'))}</button>
+          <button class="ghost" data-act="admCloseCode">${esc(t('done'))}</button>
+        </div>
+      </section>` : ''}
+      <input type="search" id="adm-q" data-input="admSearch" placeholder="${esc(t('admSearchPeople'))}" value="${esc(S.adm.q || '')}">
+      <ul class="people adm-people">${list.map(p => {
+        const ck = 'so_' + p.uid;
+        return `<li class="person adm-person" data-name="${esc(String(p.name).toLowerCase())}" data-phone="${esc(p.phone)}">
+          <span class="avatar sm">${esc(initial(p.name))}</span>
+          <span class="p-main"><strong>${esc(p.name)}${p.uid === me() ? ` <small class="muted">(${esc(t('you'))})</small>` : ''}</strong>
+            <small class="muted tnum" dir="ltr">${esc(localPhone(p.phone))}</small>
+            <small class="muted">${esc(p.lastSeen ? t('admLastSeen', { t: fmtAgo(p.lastSeen) }) : t('admNeverSeen'))} · ${esc(t('admDevices', { n: p.devices }))}${p.groups.length ? ' · ' + esc(p.groups.map(gname).join(comma())) : ''}</small></span>
+          <span class="p-side">
+            ${p.isAdmin ? `<span class="chip chip-ordered">${esc(t('roleSiteAdmin'))}</span>` : ''}
+            ${!p.hasPin ? `<span class="chip chip-none">${esc(t('admNoPinChip'))}</span>` : ''}
+            ${p.locked ? `<span class="chip chip-warn">🔒 ${esc(t('admLocked'))}</span>` : ''}
+            ${p.resetPending ? `<span class="chip chip-picking">${esc(t('admCodeOut'))}</span>` : ''}
+          </span>
+          <details class="adm-actions"><summary>${esc(t('admManage'))}</summary>
+            <div class="btn-row">
+              <button class="secondary small" data-act="admResetPin" data-uid="${esc(p.uid)}">🔑 ${esc(t('admGiveCode'))}</button>
+              ${p.uid !== me() ? `<button class="ghost small" data-act="admSignout" data-uid="${esc(p.uid)}">${esc(S.confirmKey === ck ? t('confirmAgain') : t('admSignoutAll'))}</button>` : ''}
+            </div>
+            <form class="inline-form" data-submit="admRename" data-uid="${esc(p.uid)}" novalidate>
+              <input name="name" value="${esc(p.name)}" aria-label="${esc(t('personName'))}"><button class="ghost small" type="submit">${esc(t('rename'))}</button>
+            </form>
+            ${p.groups.filter(gid => (D.groups.find(g => g.id === gid) || {}).ownerId !== p.uid).map(gid => {
+              const rk = 'rm_' + gid + '_' + p.uid;
+              return `<button class="danger-ghost small" data-act="admRemoveMember" data-gid="${esc(gid)}" data-uid="${esc(p.uid)}">${esc(S.confirmKey === rk ? t('confirmAgain') : t('admRemoveFrom', { g: gname(gid) }))}</button>`;
+            }).join('')}
+          </details>
+        </li>`;
+      }).join('')}</ul>
+      <p class="muted small-text">${esc(t('admPeopleHint'))}</p>`;
+  }
+  function admRest() {
+    if (!S.group) return `<p class="empty">${esc(t('admPickGroup'))}</p>`;
+    const list = S.restaurants.slice().sort((a, b) => (b.lastOrderedAt || 0) - (a.lastOrderedAt || 0) || a.name.localeCompare(b.name));
+    return `<div class="section-head"><h2>${esc(t('navRestaurants'))} <small class="muted">· ${esc(S.group.name)}</small></h2><button class="primary small" data-act="admNewRest">${plusIcon()} ${esc(t('addRestaurant'))}</button></div>
+      ${S.groups.length > 1 ? `<div class="seg small">${S.groups.map(g => `<button class="${g.id === S.gid ? 'on' : ''}" data-act="admGroup" data-id="${esc(g.id)}">${esc(g.name)}</button>`).join('')}</div>` : ''}
+      ${list.length ? `<ul class="rest-list">${list.map(r => `<li><button class="row-link" data-act="editRestaurant" data-id="${esc(r.id)}">
+        <span><strong>${esc(r.name)}</strong><small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))} · ${esc(t('lastOrdered'))}: ${esc(fmtAgo(r.lastOrderedAt))}</small></span><span class="chev" aria-hidden="true">›</span></button></li>`).join('')}</ul>`
+        : `<p class="empty">${esc(t('noRestaurants'))}</p>`}
+      <p class="muted small-text">${esc(t('admRestHint'))}</p>`;
+  }
+  function admGroups(D) {
+    const nm = (g, uid) => ((g.roster || {})[uid] || {}).name || ((D.people.find(p => p.uid === uid) || {}).name) || '?';
+    return `${D.groups.map(g => {
+      const link = groupLink(g.id);
+      const members = (g.memberUids || []);
+      return `<section class="panel">
+        <div class="bc-head"><strong>${esc(g.name)}</strong>${g.id === S.gid ? `<span class="chip chip-open">${esc(t('admCurrent'))}</span>` : `<button class="ghost small" data-act="admGroup" data-id="${esc(g.id)}">${esc(t('admOpenGroup'))}</button>`}</div>
+        <small class="muted">${esc(t('admGroupStats', { m: members.length, r: g.restaurants, o: g.carts }))}${g.lastOrder ? ' · ' + esc(t('lastOrdered')) + ': ' + esc(fmtAgo(g.lastOrder)) : ''}</small>
+        <div class="share-row"><code class="link" dir="ltr">${esc(link)}</code>
+          <button class="secondary small" data-act="copy" data-text="${esc(link)}">${esc(t('copyLink'))}</button>
+          ${wa(waLink('', t('msgGroupInvite', { name: g.name, link })), t('shareWa'))}</div>
+        <p class="muted small-text">${esc(members.map(u => nm(g, u)).join(comma()))}</p>
+      </section>`;
+    }).join('')}
+      <form class="panel form" data-submit="createGroup" novalidate>
+        <p class="label">${esc(t('newGroup'))}</p>
+        <label class="field"><span>${esc(t('groupName'))}</span><input id="g-new" name="name" placeholder="${esc(t('groupNamePh'))}"></label>
+        <button class="secondary" type="submit">${plusIcon()} ${esc(t('createGroup'))}</button>
+      </form>`;
+  }
+  function admMoney(D) {
+    const all = adminDebts(D);
+    const showAll = !!S.adm.showSettled;
+    const list = showAll ? all : all.filter(x => x.owe > 0 || x.pending > 0);
+    const myPI = { instapay: S.profile.instapay, instapayLink: S.profile.instapayLink, wallet: S.profile.wallet };
+    const owe = C.round2(all.reduce((s, x) => s + x.owe, 0));
+    return `<div class="section-head"><h2>${esc(t('admUnpaid'))}</h2><b class="tnum warn-txt">${esc(money(owe))}</b></div>
+      <label class="check"><input type="checkbox" data-change="admSettled" ${showAll ? 'checked' : ''}><span>${esc(t('admShowSettled'))}</span></label>
+      ${list.length ? `<ul class="people">${list.map(x => {
+        const open = x.orders.filter(o => o.due > 0);
+        const msg = t('msgDebt', { name: x.name, total: money(x.owe), n: open.length }) + payLines(myPI);
+        return `<li class="person debt">
+          <span class="avatar sm">${esc(initial(x.name))}</span>
+          <span class="p-main"><strong>${esc(x.name)}</strong><small class="muted">${esc(x.orders.slice(0, 4).map(o => o.rest + ' (' + fmtAgo(o.at) + ')' + (o.due > 0 ? ' ' + C.fmtMoney(o.due) : ' ✓')).join(comma()))}</small>
+            ${x.pending ? `<small class="muted">${esc(t('admPendingAmt', { a: money(x.pending) }))}</small>` : ''}</span>
+          <span class="p-side"><b class="tnum${x.owe > 0 ? ' debt-amt' : ''}">${esc(x.owe > 0 ? money(x.owe) : '✓')}</b></span>
+          ${x.owe > 0 && x.phone ? `<div class="debt-actions">${wa(waLink(x.phone, msg), t('remind'))}</div>` : ''}
+        </li>`;
+      }).join('')}</ul>` : `<p class="empty small">${esc(t('nobodyOwes'))}</p>`}
+      <p class="muted small-text">${esc(t('admMoneyHint'))}</p>`;
+  }
+
+  /* ---------- my orders & invoices (profile) ---------- */
+  // one row per order I was in: what I owe on it, what I paid, and whether the host confirmed it
+  function histState(h) {
+    const I = h.invoice, P = h.payment, m = h.member || {};
+    if (m.status === 'out' && !I) return { st: 'out', due: 0, paid: 0 };
+    if (I && I.self) return { st: 'host', due: 0, paid: 0, total: C.num(I.net) };
+    const paid = P && P.status === 'confirmed' ? C.num(P.amount) : 0;
+    if (!I) return { st: ['ordered', 'settled'].includes(h.stage) ? 'nobill' : 'open', due: 0, paid, est: C.memberSubtotal(m) };
+    const net = C.num(I.net);
+    if (P && P.status === 'reported') return { st: 'pending', due: Math.max(0, C.round2(net - paid)), paid, total: net, reported: C.num(P.amount) };
+    const due = Math.max(0, C.round2(net - paid));
+    return { st: due < 0.01 ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'), due, paid, total: net };
+  }
+  function viewHistory() {
+    const H = S.hist;
+    if (!H || H.loading) return `<section class="panel"><p class="label">${esc(t('myOrders'))}</p><div class="loading" aria-busy="true"></div></section>`;
+    if (H.error) return `<section class="panel"><p class="label">${esc(t('myOrders'))}</p><p class="empty small">${esc(t('errLoadShort'))}</p><button class="ghost small" data-act="openHistory">${esc(t('retry'))}</button></section>`;
+    const rows = H.list.map(h => Object.assign({ h }, histState(h)));
+    const owe = C.round2(rows.reduce((s, r) => s + (['unpaid', 'partial'].includes(r.st) ? r.due : 0), 0));
+    const waiting = C.round2(rows.reduce((s, r) => s + (r.st === 'pending' ? r.reported : 0), 0));
+    const paid = C.round2(rows.reduce((s, r) => s + r.paid, 0));
+    const chip = r => ({
+      paid: `<span class="chip chip-done">✓ ${esc(t('invPaid'))}</span>`,
+      partial: `<span class="chip chip-picking">${esc(t('stPartial'))}</span>`,
+      unpaid: `<span class="chip chip-warn">${esc(t('invUnpaid'))}</span>`,
+      pending: `<span class="chip chip-picking">${esc(t('invPending'))}</span>`,
+      nobill: `<span class="chip chip-none">${esc(t('stNoBill'))}</span>`,
+      open: `<span class="chip chip-ordering">${esc(t('stOrdering'))}</span>`,
+      host: `<span class="chip chip-ordered">${esc(t('stHost'))}</span>`,
+      out: `<span class="chip chip-out">${esc(t('psOut'))}</span>`
+    }[r.st] || '');
+    const amount = r => r.st === 'host' || r.st === 'out' ? '' : r.total != null ? money(r.st === 'paid' ? r.total : r.due) : r.est ? '≈ ' + money(r.est) : '';
+    const filter = S.histFilter || 'all';
+    const shown = rows.filter(r => filter === 'all' || (filter === 'unpaid' && ['unpaid', 'partial', 'pending'].includes(r.st)));
+    return `<section class="stack">
+      <div class="summary three">
+        <div><span>${esc(t('youOwe'))}</span><strong class="tnum${owe > 0 ? ' warn-txt' : ''}">${esc(money(owe))}</strong></div>
+        <div><span>${esc(t('waitingConfirmShort'))}</span><strong class="tnum">${esc(money(waiting))}</strong></div>
+        <div><span>${esc(t('paidTotal'))}</span><strong class="tnum">${esc(money(paid))}</strong></div>
+      </div>
+      <div class="section-head"><h2>${esc(t('myOrders'))} <small class="muted tnum">(${rows.length})</small></h2>
+        <div class="seg small"><button class="${filter === 'all' ? 'on' : ''}" data-act="histFilter" data-f="all">${esc(t('fAll'))}</button><button class="${filter === 'unpaid' ? 'on' : ''}" data-act="histFilter" data-f="unpaid">${esc(t('fUnpaid'))}</button></div></div>
+      ${shown.length ? `<ul class="hist">${shown.map(r => {
+        const h = r.h, items = ((h.member || {}).items || []).map(i => (i.qty > 1 ? i.qty + '× ' : '') + i.name);
+        const canOpen = !!(h.invoice && h.invoiceKey);
+        return `<li><button class="row-link hist-row" data-act="${canOpen ? 'openMyInvoice' : 'openHistCart'}" data-i="${esc(H.list.indexOf(h))}">
+          <span><strong>${esc(h.restaurant || h.title || t('order'))}</strong>
+            <small class="muted">${esc(h.createdAt ? fmtDate(h.createdAt) : '')}${S.groups.length > 1 ? ' · ' + esc(h.groupName || '') : ''}</small>
+            ${items.length ? `<small class="muted hist-items">${esc(items.slice(0, 4).join(comma()))}${items.length > 4 ? '…' : ''}</small>` : ''}</span>
+          <span class="hist-side"><b class="tnum">${esc(amount(r))}</b>${chip(r)}${canOpen ? `<small class="muted">${esc(t('viewInvoice'))} ›</small>` : ''}</span>
+        </button></li>`;
+      }).join('')}</ul>` : `<p class="empty small">${esc(filter === 'unpaid' ? t('youOweNothing') : t('noOrders'))}</p>`}
+    </section>`;
+  }
+  async function loadMyOrders() {
+    if (isLocal() || !S.store.history) return;
+    S.hist = Object.assign({ list: [] }, S.hist, { loading: !(S.hist && S.hist.list && S.hist.list.length), error: false });
+    render(true);
+    try { S.hist = { list: (await S.store.history()) || [], at: Date.now() }; }
+    catch (e) { console.warn(e); S.hist = { list: [], error: true }; }
+    if (S.route.name === 'profile') render(true);
   }
 
   /* ---------- countdown ---------- */
@@ -1400,6 +1724,53 @@
   }
 
   const actions = {
+    authMode: el => { S.authMode = el.dataset.m; S.authMsg = null; const ph = $('#l-phone') || $('#s-phone'); if (ph) S.authPhone = ph.value.trim(); render(true); },
+    logout: async () => {
+      await S.store.logout();
+      LS.del('tarweeqa.profile'); LS.del('tarweeqa.gid');
+      location.href = baseUrl() || location.pathname;
+    },
+    openHistory: () => go('profile'),
+    histFilter: el => { S.histFilter = el.dataset.f; render(true); },
+    openMyInvoice: async el => {
+      const h = S.hist && S.hist.list[+el.dataset.i]; if (!h) return;
+      S.invoiceView = { loading: true }; render(true);
+      try {
+        const data = await S.store.invoice(h.gid, h.cid, h.key, h.invoiceKey);
+        const link = baseUrl() + '?inv=1&g=' + encodeURIComponent(h.gid) + '&c=' + encodeURIComponent(h.cid) + '&p=' + encodeURIComponent(h.key) + '&k=' + encodeURIComponent(h.invoiceKey);
+        S.invoiceView = { preview: true, back: { name: 'profile' }, data: Object.assign(data, { link }) };
+      } catch (e) { console.warn(e); S.invoiceView = null; toast(t('errLoadShort'), 'warn'); }
+      render(true); window.scrollTo(0, 0);
+    },
+    openHistCart: el => {
+      const h = S.hist && S.hist.list[+el.dataset.i]; if (!h) return;
+      if (h.gid !== S.gid) setGroup(h.gid, true);
+      go('cart', { id: h.cid, tab: 'mine' });
+    },
+    admTab: el => { S.adm.tab = el.dataset.tab; S.confirmKey = null; render(true); },
+    admReload: () => loadAdmin(),
+    admCloseCode: () => { S.adm.code = null; render(true); },
+    admResetPin: async el => {
+      const r = await guard(S.store.adminResetPin(el.dataset.uid)); if (!r) return;
+      S.adm.code = r; render(true); window.scrollTo(0, 0); loadAdmin();
+    },
+    admSignout: async el => {
+      const k = 'so_' + el.dataset.uid;
+      if (S.confirmKey !== k) { S.confirmKey = k; return render(true); }
+      S.confirmKey = null;
+      if (await guard(S.store.adminSignout(el.dataset.uid)) === null) return;
+      toast(t('admSignedOut')); loadAdmin();
+    },
+    admRemoveMember: async el => {
+      const k = 'rm_' + el.dataset.gid + '_' + el.dataset.uid;
+      if (S.confirmKey !== k) { S.confirmKey = k; return render(true); }
+      S.confirmKey = null;
+      if (await guard(S.store.adminRemoveMember(el.dataset.gid, el.dataset.uid)) === null) return;
+      toast(t('saved')); loadAdmin();
+    },
+    admGroup: el => { setGroup(el.dataset.id, true); render(true); },
+    admNewOrder: () => { S.sel = []; go('newOrder'); },
+    admNewRest: () => actions.newRestaurant(),
     nav: el => {
       const to = el.dataset.to;
       if (to === 'newOrder') S.sel = [];
@@ -1415,12 +1786,12 @@
     joinGroup: () => joinPending(),
 
     /* restaurants */
-    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', fees: {}, items: [] }; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : 'restaurants' }); },
+    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', fees: {}, items: [] }; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : from === 'admin' ? 'admin' : 'restaurants' }); },
     editRestaurant: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r) return;
       S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.ocr = null; S.pl = null; S.placeEdit = false;
       loadHistory(r.name, true); loadReceipts(r.name);
-      go('restaurant', { from: 'restaurants' });
+      go('restaurant', { from: S.route.name === 'admin' ? 'admin' : 'restaurants' });
     },
     placeNearby: () => { syncDraft(); if (dPoint()) runPlaces('rest', '', true); },
     placeEdit: () => { syncDraft(); S.placeEdit = true; S.pl = null; render(true); },
@@ -1482,12 +1853,12 @@
       if (!id) return;
       toast(t('saved'));
       if (S.route.from === 'newOrder') { if (!S.sel.includes(id)) S.sel.push(id); go('newOrder'); }
-      else go('restaurants');
+      else go(S.route.from === 'admin' ? 'admin' : 'restaurants');
     },
     deleteRestaurant: async () => {
       if (S.confirmKey !== 'delRest') { syncDraft(); S.confirmKey = 'delRest'; return render(true); }
       await guard(S.store.deleteRestaurant(S.gid, S.draft.id));
-      go('restaurants');
+      go(S.route.from === 'admin' ? 'admin' : 'restaurants');
     },
 
     /* voting */
@@ -2605,15 +2976,108 @@
     rcMap: el => { S.rcpt.map[el.dataset.k] = +el.value; render(true); },
     rcFee: el => { S.rcpt.fees[+el.dataset.i] = el.checked; render(true); },
     copyFrom: el => { S.copyFrom = el.value; },
+    admSettled: el => { S.adm.showSettled = el.checked; render(true); },
     itemName: () => syncDraft(),
     itemPrice: () => syncDraft()
   };
+
+  /* ---------- accounts ---------- */
+  function adoptPerson(p) {
+    if (!p) return;
+    const old = LS.get('tarweeqa.profile') || {};
+    const same = old.phone && C.waPhone(old.phone, CFG.defaultCountryCode || '20') === String(p.phone);
+    S.profile = Object.assign({ instapay: '', wallet: '' }, same ? old : {}, p.data || {}, { name: p.name, phone: localPhone(p.phone) });
+    LS.set('tarweeqa.profile', S.profile);
+  }
+  function afterAuth() {
+    S.authMsg = null; S.hist = null; S.adm = null;
+    if (needsPin()) return render(true);
+    if (S.pending && S.pending.gid) return loadPending();
+    const mine = S.store.myGroups || [];
+    S.groups = mine;
+    const saved = LS.get('tarweeqa.gid');
+    const pick = (saved && mine.some(g => g.id === saved)) ? saved : (mine[0] && mine[0].id);
+    if (pick) { setGroup(pick, true); return go('home'); }
+    S.gid = null; S.group = null; go('home');
+  }
+  function authError(code, r) {
+    if (code === 'no_account') return t('errNoAccount');
+    if (code === 'wrong_pin') return t('errWrongPin', { n: (r && r.left) || 0 });
+    if (code === 'locked') return t('errLocked', { t: fmtTime((r && r.until) || Date.now()) });
+    if (code === 'no_pin') return t('errNoPin');
+    if (code === 'phone taken') return t('errPhoneTaken');
+    if (code === 'bad pin') return t('errPinRule');
+    return t('errWrite');
+  }
+  function showErr(id, msg) { const e = $(id); if (e) { e.textContent = msg; e.hidden = false; } }
+  const cleanPin = v => String(v || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '');
+  const pinOk = v => /^\d{4,6}$/.test(v);
 
   const submits = {
     placeSearch: form => {
       const q = form.q.value.trim(); if (!q) return;
       if (form.dataset.for === 'rest') syncDraft(); else S.dpLabel = (($('#dp-label') || {}).value || '').trim();
       runPlaces(form.dataset.for, q, false);
+    },
+    login: async form => {
+      const phone = form.phone.value.trim(), pin = cleanPin(form.pin.value);
+      S.authPhone = phone;
+      if (!C.isValidPhone(phone)) return showErr('#w-err', t('errPhone'));
+      if (!pinOk(pin)) return showErr('#w-err', t('errPinRule'));
+      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      let r = null;
+      try { r = await S.store.login(phone, pin); } catch (e) { console.warn(e); r = { error: 'net' }; }
+      if (r.error) {
+        if (btn) btn.disabled = false;
+        if (r.error === 'no_account') { S.authMode = 'signup'; S.authMsg = t('errNoAccount'); return render(true); }
+        form.pin.value = '';
+        return showErr('#w-err', authError(r.error, r));
+      }
+      adoptPerson(r.person);
+      toast(t('welcomeBack', { name: S.profile.name }));
+      afterAuth();
+    },
+    signup: async form => {
+      const name = form.name.value.trim(), phone = form.phone.value.trim(), pin = cleanPin(form.pin.value), pin2 = cleanPin(form.pin2.value);
+      S.authPhone = phone;
+      if (!name) return showErr('#w-err', t('errName'));
+      if (!C.isValidPhone(phone)) return showErr('#w-err', t('errPhone'));
+      if (!pinOk(pin)) return showErr('#w-err', t('errPinRule'));
+      if (pin !== pin2) return showErr('#w-err', t('errPinMatch'));
+      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      const old = LS.get('tarweeqa.profile') || {};
+      try { await S.store.register(phone, name, { instapay: old.instapay || '', instapayLink: old.instapayLink || '', wallet: old.wallet || '' }, pin); }
+      catch (e) {
+        console.warn(e); if (btn) btn.disabled = false;
+        const m = String((e && e.message) || '');
+        if (m.includes('phone taken')) { S.authMode = 'login'; S.authMsg = t('errPhoneTaken'); return render(true); }
+        return showErr('#w-err', authError(m));
+      }
+      adoptPerson(S.store.person);
+      afterAuth();
+    },
+    setPinFirst: async form => {
+      const pin = cleanPin(form.pin.value), pin2 = cleanPin(form.pin2.value);
+      if (!pinOk(pin)) return showErr('#f-err', t('errPinRule'));
+      if (pin !== pin2) return showErr('#f-err', t('errPinMatch'));
+      let r = null;
+      try { r = await S.store.setPin(pin); } catch (e) { console.warn(e); return showErr('#f-err', authError(String(e.message || ''))); }
+      if (r && r.error) return showErr('#f-err', authError(r.error, r));
+      toast(t('pinSaved'));
+      afterAuth();
+    },
+    changePin: async form => {
+      const old = cleanPin(form.old.value), pin = cleanPin(form.pin.value);
+      if (!pinOk(pin)) return showErr('#c-err', t('errPinRule'));
+      let r = null;
+      try { r = await S.store.setPin(pin, old); } catch (e) { console.warn(e); return showErr('#c-err', authError(String(e.message || ''))); }
+      if (r && r.error) return showErr('#c-err', t('errOldPin'));
+      form.reset(); toast(t('pinSaved'));
+    },
+    admRename: async form => {
+      const name = form.name.value.trim(); if (!name) return toast(t('errName'), 'warn');
+      if (await guard(S.store.adminRenamePerson(form.dataset.uid, name)) === null) return;
+      toast(t('saved')); loadAdmin();
     },
     welcome: async form => {
       const name = form.name.value.trim(), phone = form.phone.value.trim();
@@ -2652,7 +3116,7 @@
       if (!name) return toast(t('errGroupName'), 'warn');
       const uid = me();
       const gid = await guard(S.store.createGroup({ name, ownerId: uid, adminIds: [uid], memberUids: [uid], roster: { [uid]: { name: S.profile.name, phone: S.profile.phone, joinedAt: Date.now() } }, createdAt: Date.now() }));
-      if (gid) { setGroup(gid); go('group'); }
+      if (gid) { const fromAdmin = S.route.name === 'admin'; setGroup(gid, true); if (fromAdmin) { S.adm.tab = 'groups'; go('admin'); } else go('group'); }
     },
     renameGroup: form => { const n = form.name.value.trim(); if (n) guard(S.store.patchGroup(S.gid, { name: n })).then(() => toast(t('saved'))); },
     cartPerson: form => {
@@ -2764,6 +3228,10 @@
       document.querySelectorAll('.menu-item').forEach(li => { const show = !q || li.dataset.name.includes(q); li.hidden = !show; if (show) any = true; });
       document.querySelectorAll('[data-group]').forEach(g => { g.hidden = !g.querySelector('.menu-item:not([hidden])'); });
       const nm = $('#no-match'); if (nm) nm.hidden = any;
+    } else if (el.dataset.input === 'admSearch') {
+      S.adm.q = el.value;
+      const q = el.value.trim().toLowerCase(), qd = q.replace(/\D/g, '').replace(/^0/, '');
+      document.querySelectorAll('.adm-person').forEach(li => { li.hidden = !!q && !li.dataset.name.includes(q) && !(qd && li.dataset.phone.includes(qd)); });
     } else if (el.dataset.input === 'restSearch') {
       S.restQuery = el.value;
       const q = el.value.trim().toLowerCase();
@@ -2828,10 +3296,11 @@
         await S.store.init();
         S.profile = LS.get('tarweeqa.profile');
         const sp = S.store.person;
-        if (sp && sp.name) { S.profile = Object.assign({ instapay: '', wallet: '' }, S.profile || {}, sp.data || {}, { name: sp.name, phone: (S.profile && S.profile.phone) || ('0' + String(sp.phone || '').replace(/^20/, '')) }); LS.set('tarweeqa.profile', S.profile); }
-        else if (S.profile && S.profile.name && C.isValidPhone(S.profile.phone || '')) {
-          // signed in on this device before the phone registry existed: register the number now, so other devices find this person
-          try { await S.store.register(S.profile.phone, S.profile.name, { instapay: S.profile.instapay || '', instapayLink: S.profile.instapayLink || '', wallet: S.profile.wallet || '' }); } catch (e) { console.warn(e); }
+        if (sp && sp.name) adoptPerson(sp);
+        else {
+          // not signed in on this device: show sign-in, with the number this browser used before
+          if (S.profile && S.profile.phone) { S.authPhone = S.profile.phone; S.authMode = 'login'; }
+          S.profile = null;
         }
       } else if (CFG.firebase) {
         S.store = new CloudStore(CFG);
@@ -2855,9 +3324,17 @@
     let gid = null, cid = null, inv = null;
     try { const q = new URLSearchParams(location.search); gid = q.get('g'); cid = q.get('c'); if (q.get('inv')) inv = { gid, cid, key: q.get('p'), secret: q.get('k') }; } catch (e) { }
     if (inv) return openInvoice(inv);
-    if (gid) { S.pending = { gid, cid }; if (S.profile && S.profile.name) loadPending(); else render(true); return; }
+    let wantAdmin = false; try { wantAdmin = new URLSearchParams(location.search).has('admin'); } catch (e) { }
+    const signedIn = isLocal() ? !!(S.profile && S.profile.name) : !!person() && !needsPin();
+    if (gid) { S.pending = { gid, cid }; if (signedIn) loadPending(); else render(true); return; }
     const saved = LS.get('tarweeqa.gid');
-    if (saved && S.profile && S.profile.name) { setGroup(saved, true); return go('home'); }
+    if (signedIn) {
+      const mine = S.store.myGroups && S.store.myGroups.length ? S.store.myGroups : null;
+      const pick = saved || (mine && mine[0] && mine[0].id);
+      if (pick) setGroup(pick, true);
+      if (wantAdmin && isSiteAdmin()) return go('admin');
+      if (pick) return go('home');
+    }
     render(true);
   }
 
