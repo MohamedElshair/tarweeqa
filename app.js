@@ -295,6 +295,16 @@
     const rest = c.restaurant ? c.restaurant.name : '';
     document.title = '(!) ' + t('appName');
     const onCart = S.route.name === 'cart' && S.route.id === c.id;
+    const left = c.closesAt - Date.now();
+    // still picking on the order page: no nagging, just a quiet basket bar (the yellow reminder only when away, or in the last 10 minutes)
+    if (onCart && left > 10 * 60000) {
+      if (!has) return '';
+      const n = (m.items || []).reduce((x, i) => x + C.num(i.qty), 0);
+      return `<aside class="nag-bar calm">
+        <button class="calm-basket tnum" data-act="basketOpen" data-id="${esc(c.id)}" data-key="${esc(me())}"><span class="cb-ico">🧺</span><span><strong>${esc(t('basketTitle'))} · ${esc(t('basketCount', { n }))}</strong><small>≈ ${esc(money(C.estimateFor(c, me()).total))}</small></span></button>
+        <button class="primary" data-act="doneFor" data-id="${esc(c.id)}">${esc(t('nagDone'))}</button>
+      </aside>`;
+    }
     return `<aside class="nag-bar" role="status" aria-live="polite">
       <div class="nag-txt">${restLogo(c, rest, 'sm')}<span><strong>${esc(st === 'picking' ? t('nagPicking', { rest }) : t('nagNone', { rest }))}</strong>
         <small class="tnum">${esc(t('nagUntil', { t: fmtTime(c.closesAt) }))} · <span data-countdown="${c.closesAt}"></span></small></span></div>
