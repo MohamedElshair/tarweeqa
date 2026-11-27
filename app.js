@@ -196,6 +196,7 @@
     window.scrollTo(0, 0);
     if (name === 'profile') loadMyOrders();
     if (name === 'admin') loadAdmin();
+    if (name === 'money') loadLedger();
   }
 
   /* ---------- views ---------- */
@@ -1234,6 +1235,72 @@
   }
 
   /* ---------- money ---------- */
+  /* site admin: every person's debt and wallet across every group (each group's bills follow that group's host) */
+  async function loadLedger() {
+    if (!isSiteAdmin() || !S.store.adminLedger) return;
+    S.ledger = Object.assign({}, S.ledger, { busy: true });
+    try { S.ledger = { groups: await S.store.adminLedger(), at: Date.now() }; }
+    catch (e) { console.warn(e); S.ledger = { error: true }; }
+    scheduleRender();
+  }
+  function ledgerPeople() {
+    const out = {};
+    for (const g of (S.ledger && S.ledger.groups) || []) {
+      const P = C.balances(g.carts || []);
+      for (const host of Object.keys(P)) for (const k of Object.keys(P[host])) {
+        if (host !== me()) continue;   // money owed to me, and wallets I hold
+        const p = P[host][k];
+        const o = out[k] = out[k] || { key: k, name: p.name, phone: p.phone, owe: 0, credit: 0, groups: [], lines: [] };
+        o.phone = o.phone || p.phone;
+        if (p.balance < -0.009) o.owe = C.round2(o.owe - p.balance); else if (p.balance > 0.009) o.credit = C.round2(o.credit + p.balance);
+        if (!o.groups.some(x => x.gid === g.gid)) o.groups.push({ gid: g.gid, name: g.name, bal: 0 });
+        const gx = o.groups.find(x => x.gid === g.gid); gx.bal = C.round2(gx.bal + p.balance);
+        for (const x of p.carts) o.lines.push(Object.assign({ group: g.name, gid: g.gid }, x));
+      }
+    }
+    return Object.values(out).sort((a, b) => (b.owe - a.owe) || (b.credit - a.credit) || String(a.name).localeCompare(String(b.name)));
+  }
+  function ledgerPanel() {
+    const L = S.ledger;
+    if (!L || (L.busy && !L.groups)) return `<section class="panel"><p class="label">${esc(t('ledgerTitle'))}</p><div class="loading" aria-busy="true"></div></section>`;
+    if (L.error) return `<section class="panel"><p class="label">${esc(t('ledgerTitle'))}</p><p class="empty small">${esc(t('errLoad'))}</p></section>`;
+    const list = ledgerPeople();
+    const owe = C.round2(list.reduce((s, p) => s + p.owe, 0)), cred = C.round2(list.reduce((s, p) => s + p.credit, 0));
+    const myPI = { instapay: S.profile.instapay, wallet: S.profile.wallet };
+    const state = x => x.state === 'paid' ? (x.paid - x.total > 0.009 ? 'over' : 'paid') : x.state;
+    return `<section class="panel ledger">
+      <div class="section-head"><h2>${esc(t('ledgerTitle'))}</h2><button class="ghost small" data-act="ledgerRefresh">↻</button></div>
+      <div class="ledger-tot tnum">
+        <span class="warn"><small>${esc(t('ledgerOwedAll'))}</small><b>${esc(money(owe))}</b></span>
+        <span class="ok"><small>${esc(t('ledgerWallets'))}</small><b>${esc(money(cred))}</b></span>
+      </div>
+      ${list.length ? `<ul class="ledger-list">${list.map(p => {
+        const open = S.ledgerOpen === p.key;
+        const side = p.owe > 0.009 ? `<b class="tnum debt-amt">${esc(t('ledgerOwes', { a: money(p.owe) }))}</b>` : '';
+        const wal = p.credit > 0.009 ? `<span class="chip chip-done tnum">${esc(t('ledgerWallet', { a: C.fmtMoney(p.credit) }))}</span>` : '';
+        const clear = !side && !wal ? `<span class="chip chip-out">${esc(t('ledgerClear'))}</span>` : '';
+        const msg = t('msgDebt', { name: p.name, total: money(p.owe), n: p.lines.filter(x => x.state !== 'paid').length }) + payLines(myPI);
+        return `<li class="${p.owe > 0.009 ? 'owes' : ''}">
+          <button class="ledger-row" data-act="ledgerToggle" data-key="${esc(p.key)}" aria-expanded="${open}">
+            <span class="avatar sm">${esc(initial(p.name))}</span>
+            <span class="p-main"><strong>${esc(p.name)}</strong><small class="muted">${esc(p.groups.map(g => g.name).join(comma()))}</small></span>
+            <span class="p-side">${side}${wal}${clear}</span>
+          </button>
+          ${open ? `<div class="ledger-detail">
+            <table class="ledger-lines tnum"><thead><tr><th>${esc(t('ledgerOrder'))}</th><th>${esc(t('ledgerBill'))}</th><th>${esc(t('ledgerPaid'))}</th></tr></thead><tbody>
+            ${p.lines.slice().sort((a, b) => b.at - a.at).map(x => `<tr class="st-${state(x)}"><td>${esc(x.rest || '')}<small class="muted"> · ${esc(fmtDate(x.at))}${p.groups.length > 1 ? ' · ' + esc(x.group) : ''}</small></td><td>${esc(C.fmtMoney(x.total))}</td><td>${esc(C.fmtMoney(x.paid))}${state(x) === 'over' ? ` <small class="ok">+${esc(C.fmtMoney(x.paid - x.total))}</small>` : ''}</td></tr>`).join('')}
+            </tbody></table>
+            ${p.credit > 0.009 ? `<p class="muted small-text">${esc(t('ledgerWalletHint', { a: money(p.credit) }))}</p>` : ''}
+            <div class="btn-row">
+              ${p.owe > 0.009 && p.phone ? wa(waLink(p.phone, msg), t('remind')) : ''}
+              ${p.groups.filter(g => g.gid !== S.gid).map(g => `<button class="secondary small" data-act="ledgerGroup" data-id="${esc(g.gid)}">${esc(t('ledgerOpenGroup', { g: g.name }))}</button>`).join('')}
+            </div>
+          </div>` : ''}
+        </li>`;
+      }).join('')}</ul>` : `<p class="empty small">${esc(t('nobodyOwes'))}</p>`}
+    </section>`;
+  }
+
   function viewMoney() {
     const toMe = owedToMe();
     const credits = Object.values(pairs()[me()] || {}).filter(p => p.balance > 0.009);
@@ -1242,6 +1309,7 @@
     const tot = list => C.round2(list.reduce((s, p) => s + Math.abs(p.balance), 0));
     const myPI = { instapay: S.profile.instapay, wallet: S.profile.wallet };
     return `<h1>${esc(t('navMoney'))}</h1>
+      ${isSiteAdmin() ? ledgerPanel() + `<p class="label">${esc(t('ledgerThisGroup', { g: S.group.name }))}</p>` : ''}
       ${pend.length ? `<section class="stack">
         <div class="section-head"><h2>${esc(t('toConfirm'))}</h2><span class="chip chip-picking tnum">${pend.length}</span></div>
         <ul class="people">${pend.map(({ c, key, p }) => {
@@ -3672,6 +3740,9 @@
     finally { starting = false; }
   }
   Object.assign(actions, {
+    ledgerToggle: el => { S.ledgerOpen = S.ledgerOpen === el.dataset.key ? null : el.dataset.key; render(true); },
+    ledgerRefresh: () => loadLedger(),
+    ledgerGroup: el => { setGroup(el.dataset.id, true); go('money'); },
     // admin: one tap = the fixed group's order from this restaurant
     quickStart: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r || !isAdmin()) return;

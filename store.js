@@ -248,6 +248,7 @@
     }
     history() { return this.rpc('tq_my_history'); }
     adminOverview() { return this.rpc('tq_admin_overview'); }
+    adminLedger() { return this.rpc('tq_admin_ledger'); }
     adminResetPin(uid) { return this.rpc('tq_admin_reset_pin', { p_uid: uid }); }
     adminSignout(uid) { return this.rpc('tq_admin_signout', { p_uid: uid }); }
     async adminRemoveMember(gid, uid) { await this.after(gid, this.rpc('tq_admin_remove_member', { p_gid: gid, p_uid: uid })); }
