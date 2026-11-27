@@ -1032,3 +1032,9 @@ a.link { color: var(--accent); text-decoration: none; }
 .rp-items li { display: flex; justify-content: space-between; gap: 10px; font-size: .92rem; }
 .debt-ask { border: 1.5px solid var(--sun); background: var(--sun-soft); }
 .wallet-note, .debt-note { font-weight: 600; }
+.switch-row { display: flex; flex-direction: row; gap: 12px; align-items: flex-start; cursor: pointer; margin-top: 10px; }
+.switch-row input { width: 22px; height: 22px; margin-top: 2px; accent-color: var(--accent); flex: none; }
+.switch-row span { display: flex; flex-direction: column; gap: 2px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: .92rem; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 35%, transparent); }

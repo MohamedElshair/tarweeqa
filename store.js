@@ -60,8 +60,10 @@
     emit() { for (const f of Array.from(this.subs)) { try { f(); } catch (e) { console.error(e); } } }
     sub(f) { this.subs.add(f); setTimeout(f, 0); return () => this.subs.delete(f); }
 
-    onMyGroups(cb) { return this.sub(() => cb(Object.values(this.data.groups).filter(g => g.memberUids.includes(this.uid())).map(clone))); }
-    onGroup(gid, cb) { return this.sub(() => cb(this.data.groups[gid] ? clone(this.data.groups[gid]) : null)); }
+    onMyGroups(cb) { return this.sub(() => cb(Object.values(this.data.groups).filter(g => g.memberUids.includes(this.uid()) && !g.deletedAt).map(clone))); }
+    async deleteGroup(gid) { const g = this.data.groups[gid]; if (!g) return; g.deletedAt = Date.now(); if (g.schedule) g.schedule.on = false; this.persist(); }
+    async restoreGroup(gid) { const g = this.data.groups[gid]; if (g) { delete g.deletedAt; this.persist(); } }
+    onGroup(gid, cb) { return this.sub(() => cb(this.data.groups[gid] && !this.data.groups[gid].deletedAt ? clone(this.data.groups[gid]) : null)); }
     async createGroup(g) { const id = rid(); this.data.groups[id] = Object.assign(clone(g), { id }); this.persist(); return id; }
     async joinGroup(gid, entry) {
       const g = this.data.groups[gid]; const me = this.uid();
@@ -253,6 +255,9 @@
     adminSignout(uid) { return this.rpc('tq_admin_signout', { p_uid: uid }); }
     async adminRemoveMember(gid, uid) { await this.after(gid, this.rpc('tq_admin_remove_member', { p_gid: gid, p_uid: uid })); }
     adminRenamePerson(uid, name) { return this.rpc('tq_admin_rename_person', { p_uid: uid, p_name: name }); }
+    // a deleted group order is hidden from everyone, but its orders, invoices and money stay (the admin can bring it back)
+    async deleteGroup(gid) { await this.rpc('tq_admin_delete_group', { p_gid: gid }); await this.refreshGroups(); }
+    async restoreGroup(gid) { await this.rpc('tq_admin_restore_group', { p_gid: gid }); await this.refreshGroups(); }
     saveProfileRemote(name, data) { return this.rpc('tq_save_profile', { p_name: name, p_data: data || {} }); }
     priceHistory(gid, restName) { return this.rpc('tq_price_history', { p_gid: gid, p_rest_name: restName }); }
     saveReceipt(gid, r) { return this.rpc('tq_save_receipt', { p_gid: gid, p_cart_id: r.cartId || null, p_rest_name: r.restName, p_order_no: r.orderNo || '', p_at: r.at, p_parsed: r.parsed, p_image: r.image || null }); }

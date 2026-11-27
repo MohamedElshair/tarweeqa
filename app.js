@@ -87,12 +87,14 @@
     return openForMe().find(c => ['none', 'picking'].includes(personStatus(c, me()))) || null;
   }
 
+  // someone who manages this group order but doesn't order in it (e.g. the admin who made it)
+  const notOrdering = uid => !!(S.group && (S.group.notOrdering || []).includes(uid));
   /* everyone in the group, plus anyone who joined this order */
   function people(c) {
     const out = {};
     const roster = (S.group && S.group.roster) || {};
     if (c && c.solo) { if (roster[c.ownerId]) out[c.ownerId] = Object.assign({ key: c.ownerId }, roster[c.ownerId]); else out[c.ownerId] = { key: c.ownerId, name: c.ownerName, phone: c.ownerPhone }; }
-    else for (const k of Object.keys(roster)) out[k] = Object.assign({ key: k }, roster[k]);
+    else for (const k of Object.keys(roster)) if (!notOrdering(k) || (c && c.members && c.members[k])) out[k] = Object.assign({ key: k }, roster[k]);
     if (c) for (const k of Object.keys(c.members || {})) out[k] = Object.assign({ key: k }, out[k] || {}, { name: c.members[k].name, phone: c.members[k].phone || (out[k] || {}).phone, guest: c.members[k].guest || (out[k] || {}).guest });
     return out;
   }
@@ -456,6 +458,7 @@
       <p class="lead">${esc(t('startSub'))}</p>
       <form class="panel form" data-submit="createGroup" novalidate>
         <label class="field"><span>${esc(t('groupName'))}</span><input id="g-name" name="name" placeholder="${esc(t('groupNamePh'))}"></label>
+        <label class="check"><input type="checkbox" name="iorder" checked> ${esc(t('iOrderLbl'))}</label>
         <button class="primary block" type="submit">${esc(t('createGroup'))}</button>
       </form>
       ${S.groups.length ? `<section class="panel"><p class="label">${esc(t('myGroups'))}</p>${S.groups.map(g => `<button class="row-link" data-act="switchGroup" data-id="${esc(g.id)}"><span><strong>${esc(g.name)}</strong></span><span class="chev">›</span></button>`).join('')}</section>` : ''}
@@ -718,7 +721,7 @@
         ? `<button class="ghost small center" data-act="goSolo" data-id="${esc(c.id)}">${esc(S.confirmKey === 'solo:' + c.id ? t('soloConfirm') : t('soloInstead', { rest: c.restaurant.name }))}</button>` : ''}`;
     if (st === 'voting') return head + votingView(c);
     if (tab === 'bill' && c.restaurant && !S.history[c.restaurant.name]) { S.history[c.restaurant.name] = []; loadHistory(c.restaurant.name, true); }
-    const tabs = host ? [['mine', t('tabMine')], ['people', t('tabPeople') + ` <span class="tab-count tnum">${keys.length - waiting.length}/${keys.length}</span>`], ['order', t('tabOrder')], ['bill', t('tabBill')]]
+    const tabs = host ? [['mine', ppl[me()] ? t('tabMine') : t('tabForOthers')], ['people', t('tabPeople') + ` <span class="tab-count tnum">${keys.length - waiting.length}/${keys.length}</span>`], ['order', t('tabOrder')], ['bill', t('tabBill')]]
       : [['mine', t('tabMine')], ['bill', t('tabMyBill')]];   // the others' orders are the host's business
     if (!tabs.some(([k]) => k === tab)) { S.route.tab = 'mine'; return viewCart(); }
     return `${head}
@@ -842,7 +845,10 @@
   }
   function tabMine(c, st, host) {
     const ppl = people(c);
-    const key = (host && S.actFor && ppl[S.actFor]) ? S.actFor : me();
+    let key = (host && S.actFor && ppl[S.actFor]) ? S.actFor : me();
+    // the manager doesn't order here: the screen is for ordering on behalf of someone
+    if (!ppl[key] && host) { key = Object.keys(ppl).find(k => k !== me()) || me(); S.actFor = key; }
+    if (!ppl[key] && !host) return `<p class="empty">${esc(t('notOrderingNote'))}</p>`;
     const m = (c.members || {})[key] || { items: [], status: null, done: false };
     const open = st === 'ordering';
     const canEdit = open || (host && st === 'closed');
@@ -1538,6 +1544,8 @@
       <section>
         <div class="section-head"><h2>${esc(t('membersN', { n: keys.length }))}</h2></div>
         <ul class="people">${keys.map(memberRow).join('')}</ul>
+        ${adm && (g.memberUids || []).includes(me()) ? `<label class="panel switch-row"><input type="checkbox" data-change="iOrder"${notOrdering(me()) ? '' : ' checked'}>
+          <span><strong>${esc(t('iOrderLbl'))}</strong><small class="muted">${esc(notOrdering(me()) ? t('iOrderOffHint') : t('iOrderOnHint'))}</small></span></label>` : ''}
       </section>
       ${adm ? `<form class="panel form" data-submit="addGuest" novalidate>
         <p class="label">${esc(t('gAddPerson'))}</p>
@@ -1559,8 +1567,21 @@
       ${isSiteAdmin() ? `<details class="panel"><summary>${esc(t('newGroup'))}</summary>
         <form class="form" data-submit="createGroup" novalidate>
           <label class="field"><span>${esc(t('groupName'))}</span><input id="g-new" name="name"></label>
+          <label class="check"><input type="checkbox" name="iorder" checked> ${esc(t('iOrderLbl'))}</label>
           <button class="secondary" type="submit">${esc(t('createGroup'))}</button>
-        </form></details>` : ''}`;
+        </form></details>` : ''}
+      ${isSiteAdmin() || isLocal() ? deleteGroupPanel(g) : ''}`;
+  }
+  function deleteGroupPanel(g) {
+    const ck = 'gDel_' + g.id;
+    const open = S.carts.filter(c => !c.solo && isOpenStage(stageOf(c))).length;
+    return `<section class="panel danger-zone">
+      <p class="label">🗑 ${esc(t('gDeleteTitle'))}</p>
+      <p class="muted small-text">${esc(t('gDeleteHint'))}</p>
+      ${S.confirmKey === ck ? `<p class="small-text warn-text">⚠ ${esc(t('gDeleteSure', { g: g.name }))}${open ? ' ' + esc(t('gDeleteOpen', { n: open })) : ''}</p>` : ''}
+      <div class="btn-row"><button class="danger-ghost" data-act="gDelete" data-id="${esc(g.id)}">${esc(S.confirmKey === ck ? t('gDeleteConfirm') : t('gDeleteBtn'))}</button>
+        ${S.confirmKey === ck ? `<button class="ghost" data-act="gDeleteCancel">${esc(t('cancel'))}</button>` : ''}</div>
+    </section>`;
   }
 
   /* ---------- daily schedule: the group's order opens and closes by itself ---------- */
@@ -2176,8 +2197,10 @@
   }
   function admGroups(D) {
     const nm = (g, uid) => ((g.roster || {})[uid] || {}).name || ((D.people.find(p => p.uid === uid) || {}).name) || '?';
-    return `${D.groups.map(g => {
+    const gone = D.groups.filter(g => g.deletedAt);
+    return `${D.groups.filter(g => !g.deletedAt).map(g => {
       const link = groupLink(g.id);
+      const dk = 'gDel_' + g.id;
       const members = (g.memberUids || []);
       return `<section class="panel">
         <div class="bc-head"><strong>${esc(g.name)}</strong><span class="btn-row tight">${g.id === S.gid ? `<span class="chip chip-open">${esc(t('admCurrent'))}</span>` : `<button class="ghost small" data-act="admGroup" data-id="${esc(g.id)}">${esc(t('admOpenGroup'))}</button>`}<button class="secondary small" data-act="admManageGroup" data-id="${esc(g.id)}">✎ ${esc(t('gManage'))}</button></span></div>
@@ -2186,12 +2209,18 @@
           <a class="secondary small btn-link" href="${esc(link)}">↗ ${esc(t('openLink'))}</a>
           <button class="secondary small" data-act="copy" data-text="${esc(link)}">${esc(t('copyLink'))}</button>
           ${wa(waLink('', t('msgGroupInvite', { name: g.name, link })), t('shareWa'))}</div>
-        <p class="muted small-text">${esc(members.map(u => nm(g, u)).join(comma()))}</p>
+        <p class="muted small-text">${esc(members.filter(u => !(g.notOrdering || []).includes(u)).map(u => nm(g, u)).join(comma()))}</p>
+        ${S.confirmKey === dk ? `<p class="small-text warn-text">⚠ ${esc(t('gDeleteSure', { g: g.name }))}</p>` : ''}
+        <div class="btn-row"><button class="danger-ghost small" data-act="gDelete" data-id="${esc(g.id)}">🗑 ${esc(S.confirmKey === dk ? t('gDeleteConfirm') : t('gDeleteBtn'))}</button>${S.confirmKey === dk ? `<button class="ghost small" data-act="gDeleteCancel">${esc(t('cancel'))}</button>` : ''}</div>
       </section>`;
     }).join('')}
+      ${gone.length ? `<details class="panel"><summary>${esc(t('gDeletedList', { n: gone.length }))}</summary>
+        ${gone.map(g => `<div class="bc-head"><span><strong>${esc(g.name)}</strong> <small class="muted">${esc(t('gDeletedOn', { d: fmtAgo(g.deletedAt) }))}</small></span><button class="secondary small" data-act="gRestore" data-id="${esc(g.id)}">↺ ${esc(t('gRestoreBtn'))}</button></div>`).join('')}
+      </details>` : ''}
       <form class="panel form" data-submit="createGroup" novalidate>
         <p class="label">${esc(t('newGroup'))}</p>
         <label class="field"><span>${esc(t('groupName'))}</span><input id="g-new" name="name" placeholder="${esc(t('groupNamePh'))}"></label>
+        <label class="check"><input type="checkbox" name="iorder" checked> ${esc(t('iOrderLbl'))}</label>
         <button class="secondary" type="submit">${plusIcon()} ${esc(t('createGroup'))}</button>
       </form>`;
   }
@@ -2902,6 +2931,23 @@
       if (ok) { S.gEdit = null; toast(t('gRemoved', { name: p.name || '' })); }
     },
     schToggle: () => { S.schOpen = !S.schOpen; render(true); },
+    gDeleteCancel: () => { S.confirmKey = null; render(true); },
+    gDelete: async el => {
+      const gid = el.dataset.id, ck = 'gDel_' + gid;
+      if (S.confirmKey !== ck) { S.confirmKey = ck; return render(true); }
+      S.confirmKey = null;
+      const name = (gid === S.gid && S.group && S.group.name) || '';
+      if (!(await guardOk(S.store.deleteGroup(gid)))) return;
+      toast(t('gDeleted', { g: name }));
+      if (S.route.name === 'admin') { loadAdmin(); return; }
+      const next = (S.groups || []).find(x => x.id !== gid && !x.deletedAt);
+      if (next) setGroup(next.id, true); else { S.gid = null; S.group = null; LS.del('tarweeqa.gid'); }
+      go('home');
+    },
+    gRestore: async el => {
+      if (!(await guardOk(S.store.restoreGroup(el.dataset.id)))) return;
+      toast(t('gRestored')); loadAdmin();
+    },
     delGuest: el => guard(S.store.patchGroup(S.gid, { ['roster.' + el.dataset.key]: undefined })),
     toggleAdmin: el => {
       const ids = new Set(S.group.adminIds || []);
@@ -4011,6 +4057,11 @@
   function setLang(l) { S.lang = l === 'en' ? 'en' : 'ar'; LS.set('tarweeqa.lang', S.lang); render(true); }
 
   const changes = {
+    iOrder: el => {
+      const set = new Set(S.group.notOrdering || []);
+      if (el.checked) set.delete(me()); else set.add(me());
+      guard(S.store.patchGroup(S.gid, { notOrdering: Array.from(set) })).then(() => toast(el.checked ? t('iOrderOnToast') : t('iOrderOffToast')));
+    },
     schOn: async el => {
       const on = el.checked;
       if (on && !(S.group.schedule && (S.group.schedule.days || []).length)) { S.schOpen = true; el.checked = false; render(true); return; }
@@ -4280,7 +4331,8 @@
       const name = form.name.value.trim();
       if (!name) return toast(t('errGroupName'), 'warn');
       const uid = me();
-      const gid = await guard(S.store.createGroup({ name, ownerId: uid, adminIds: [uid], memberUids: [uid], roster: { [uid]: { name: S.profile.name, phone: S.profile.phone, joinedAt: Date.now() } }, createdAt: Date.now() }));
+      const iorder = !form.iorder || form.iorder.checked;
+      const gid = await guard(S.store.createGroup({ name, ownerId: uid, adminIds: [uid], memberUids: [uid], roster: { [uid]: { name: S.profile.name, phone: S.profile.phone, joinedAt: Date.now() } }, notOrdering: iorder ? [] : [uid], createdAt: Date.now() }));
       if (gid) { const fromAdmin = S.route.name === 'admin'; setGroup(gid, true); if (fromAdmin) { S.adm.tab = 'groups'; go('admin'); } else go('group'); }
     },
     renameGroup: async form => {
