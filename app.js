@@ -278,6 +278,9 @@
   function nagBar() {
     const c = nagCart();
     if (!c) { document.title = t('appName'); return ''; }
+    document.title = '(!) ' + t('appName');
+    // admin work screens (menus, restaurants, the admin page): no bar, it covers Save and pulls the eye away
+    if (ADMIN_ROUTES.includes(S.route.name) || S.route.name === 'admin') return '';
     const st = personStatus(c, me());
     const m = (c.members || {})[me()] || {};
     const has = (m.items || []).length > 0;
@@ -3647,7 +3650,7 @@
     if (!S.draft) return;
     document.querySelectorAll('[data-draft]').forEach(inp => { S.draft[inp.dataset.draft] = inp.value.trim(); });
     document.querySelectorAll('[data-fee]').forEach(inp => { S.draft.fees[inp.dataset.fee] = C.round2(C.num(inp.value)); });
-    document.querySelectorAll('[data-change="itemName"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && inp.value.trim()) it.name = inp.value.trim(); });
+    document.querySelectorAll('[data-change="itemName"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && inp.value.trim()) it.name = C.fixSpelling(inp.value.trim()); });
     document.querySelectorAll('[data-change="itemPrice"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && C.num(inp.value) > 0 && C.round2(C.num(inp.value)) !== C.num(it.price)) { it.price = C.round2(C.num(inp.value)); it.at = Date.now(); } });
     document.querySelectorAll('[data-og]').forEach(inp => {
       const g = draftOg(inp.dataset.og); if (!g) return;
@@ -4003,7 +4006,7 @@
       toast(t('sharedAdded', { n: keys.length, a: money(C.round2(price * qty / keys.length)) }));
     },
     customItem: form => {
-      const name = form.name.value.trim(), price = C.num(form.price.value);
+      const name = C.fixSpelling(form.name.value.trim()), price = C.num(form.price.value);
       if (!name) return toast(t('errItemName'), 'warn');
       const c = curCart(), key = actKey(c), m = memberFor(c, key);
       m.items.push({ id: rid(8), name, price: C.round2(Math.max(0, price)), qty: 1, note: '', custom: true, noPrice: !(price > 0) });
