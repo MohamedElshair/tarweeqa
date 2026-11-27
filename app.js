@@ -235,7 +235,7 @@
       home: viewHome, newOrder: viewNewOrder, cart: viewCart, restaurants: viewRestaurants,
       restaurant: viewRestaurantEdit, money: viewMoney, group: viewGroup, profile: viewProfile, admin: viewAdmin
     }[r] || viewHome)();
-    return shell(body) + receiptModal() + optSheet();
+    return shell(body) + receiptModal() + optSheet() + basketSheet();
   }
 
   // section chips follow the scroll: the section at the top of the screen is the highlighted chip
@@ -299,7 +299,8 @@
       <div class="nag-txt">${restLogo(c, rest, 'sm')}<span><strong>${esc(st === 'picking' ? t('nagPicking', { rest }) : t('nagNone', { rest }))}</strong>
         <small class="tnum">${esc(t('nagUntil', { t: fmtTime(c.closesAt) }))} · <span data-countdown="${c.closesAt}"></span></small></span></div>
       <div class="nag-btns">
-        ${has ? `<button class="primary" data-act="doneFor" data-id="${esc(c.id)}">${esc(t('nagDone'))}</button>`
+        ${has ? `<button class="nag-basket tnum" data-act="basketOpen" data-id="${esc(c.id)}" data-key="${esc(me())}">🧺 ${esc(t('basketCount', { n: (m.items || []).reduce((x, i) => x + C.num(i.qty), 0) }))} · ≈ ${esc(C.fmtMoney(C.estimateFor(c, me()).total))}</button>
+          <button class="primary" data-act="doneFor" data-id="${esc(c.id)}">${esc(t('nagDone'))}</button>`
               : `${onCart ? '' : `<button class="primary" data-act="openCart" data-id="${esc(c.id)}">${esc(t('nagOrder'))}</button>`}${c.solo ? '' : `<button class="ghost small" data-act="skipFor" data-id="${esc(c.id)}">${esc(t('nagSkip'))}</button>`}`}
         ${has && !onCart ? `<button class="ghost small" data-act="openCart" data-id="${esc(c.id)}">${esc(t('nagFinish'))}</button>` : ''}
       </div>
@@ -807,7 +808,8 @@
         ${prev > 0.009 ? `<div class="ok"><dt>${esc(t('prevCredit'))}</dt><dd>−${esc(C.fmtMoney(prev))}</dd></div>` : ''}
         ${prev < -0.009 ? `<div class="warn"><dt>${esc(t('prevDebt'))}</dt><dd>+${esc(C.fmtMoney(-prev))}</dd></div>` : ''}
       </dl>
-      <small class="muted">${esc(items.some(i => i.noPrice) ? t('estimateNoPrice') : t('estimateNote'))}</small>` : `<small class="muted">${esc(items.some(i => i.noPrice) ? t('estimateNoPrice') : t('estimateEmpty'))}</small>`}
+      <small class="muted">${esc(items.some(i => i.noPrice) ? t('estimateNoPrice') : t('estimateNote'))}</small>
+      <p class="b-note">ℹ️ ${esc(t('estDisclaimer'))}</p>` : `<small class="muted">${esc(items.some(i => i.noPrice) ? t('estimateNoPrice') : t('estimateEmpty'))}</small>`}
     </section>`;
 
     // repeat last order from this restaurant
@@ -888,7 +890,7 @@
 
     return `<section class="stack">
         ${picker}${attend}${estBox}${repeat}
-        <div class="section-head"><h2>${esc(forOther ? t('itemsOf', { name: who }) : t('myItems'))}</h2></div>
+        <div class="section-head"><h2>${esc(forOther ? t('itemsOf', { name: who }) : t('myItems'))}</h2>${items.length ? `<button class="ghost small" data-act="basketOpen" data-id="${esc(c.id)}" data-key="${esc(key)}">🧺 ${esc(t('basketView'))}</button>` : ''}</div>
         ${myList}${mySharedLines(c, key)}${doneBlock}
       </section>${host && st !== 'settled' ? sharedPanel(c) : ''}${menu}`;
   }
@@ -2534,8 +2536,22 @@
       m.done = false;
       saveMember(c, key, m);
     },
-    done: () => { const c = curCart(), key = actKey(c), m = memberFor(c, key); m.done = true; m.status = 'in'; saveMember(c, key, m); },
-    doneFor: el => { const c = cartById(el.dataset.id); if (!c) return; const m = memberFor(c, me()); if (!(m.items || []).length) return go('cart', { id: c.id, tab: 'mine' }); m.done = true; m.status = 'in'; saveMember(c, me(), m); toast(t('doneOn')); },
+    // "I'm done" first shows the basket: the person checks every item, then confirms
+    done: () => { const c = curCart(); if (!c) return; S.basket = { cid: c.id, key: actKey(c), ask: true }; render(true); },
+    doneFor: el => { const c = cartById(el.dataset.id); if (!c) return; const m = memberFor(c, me()); if (!(m.items || []).length) return go('cart', { id: c.id, tab: 'mine' }); S.basket = { cid: c.id, key: me(), ask: true }; render(true); },
+    basketOpen: el => { const c = cartById(el.dataset.id) || curCart(); if (!c) return; S.basket = { cid: c.id, key: el.dataset.key || actKey(c), ask: false }; render(true); },
+    basketClose: () => { S.basket = null; render(true); },
+    basketConfirmAsk: () => { if (S.basket) { S.basket.ask = true; render(true); } },
+    basketEdit: () => {
+      const B = S.basket; S.basket = null; if (!B) return render(true);
+      if (S.route.name === 'cart' && S.route.id === B.cid) { S.route.tab = 'mine'; render(true); } else go('cart', { id: B.cid, tab: 'mine' });
+      setTimeout(() => { const el = document.querySelector('.my-items'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80);
+    },
+    basketConfirm: () => {
+      const B = S.basket; if (!B) return; const c = cartById(B.cid); S.basket = null; if (!c) return render(true);
+      const m = memberFor(c, B.key); if (!(m.items || []).length) return render(true);
+      m.done = true; m.status = 'in'; saveMember(c, B.key, m); toast(t('doneOn'));
+    },
     skipFor: el => { const c = cartById(el.dataset.id); if (!c) return; const m = memberFor(c, me()); m.status = 'out'; m.items = []; m.done = true; saveMember(c, me(), m); },
     undoDone: () => { const c = curCart(), key = actKey(c), m = memberFor(c, key); m.done = false; saveMember(c, key, m); },
 
@@ -3361,6 +3377,45 @@
       <label class="field"><span>${esc(t('noteOpt'))}</span><input id="os-note" value="${esc(O.note || '')}" placeholder="${esc(t('notePh'))}"></label>
       ${O.err && (pk.missing.length || pk.over.length) ? `<p class="os-err">${esc(pk.missing.length ? t('optMissing', { g: pk.missing.join('، ') }) : t('optTooMany', { g: pk.over.join('، ') }))}</p>` : ''}
       <button class="primary block big" data-act="optAdd">${plusIcon()} ${esc(t('optAddBtn', { p: money(price) }))}</button>
+    </div></div>`;
+  }
+
+  /* my basket: what I picked, the estimate, and (on "I'm done") one last check before confirming */
+  function basketSheet() {
+    const B = S.basket; if (!B) return '';
+    const c = cartById(B.cid); if (!c) { S.basket = null; return ''; }
+    const m = (c.members || {})[B.key] || {}; const items = m.items || [];
+    const forOther = B.key !== me();
+    const name = forOther ? ((people(c)[B.key] || {}).name || m.name || '') : '';
+    const est = C.estimateFor(c, B.key);
+    const prev = c.ownerId === B.key ? 0 : (prevFor(c)[B.key] || 0);
+    const total = est.total ? C.round2(est.total - prev) : 0;
+    const open = stageOf(c) === 'ordering' || (isHost(c) && stageOf(c) === 'closed');
+    const n = items.reduce((a, i) => a + C.num(i.qty), 0);
+    return `<div class="rmodal bsheet" role="dialog" aria-modal="true" aria-label="${esc(t('basketTitle'))}"><div class="rmodal-box">
+      <div class="rmodal-head"><b>🧺 ${esc(forOther ? t('basketOf', { name }) : t('basketTitle'))}</b><small class="muted">${esc(c.restaurant ? c.restaurant.name : '')} · ${esc(t('basketCount', { n }))}</small>
+        <button class="icon-btn" data-act="basketClose" aria-label="${esc(t('close'))}">×</button></div>
+      ${B.ask ? `<p class="b-ask">${esc(forOther ? t('basketAskOther', { name }) : t('basketAsk'))}</p>` : ''}
+      ${items.length ? `<ul class="b-items">${items.map(it => `<li>
+          <span class="b-qty tnum">${esc(it.qty)}×</span>
+          <span class="b-name"><b>${esc(it.name)}</b>${(it.opts || []).length ? `<small>${esc(C.optText(it))}</small>` : ''}${it.note ? `<small>📝 ${esc(it.note)}</small>` : ''}${it.custom ? `<small class="tag">${esc(t('notOnMenu'))}</small>` : ''}</span>
+          <b class="b-price tnum">${it.noPrice ? esc(t('priceLater')) : esc(C.fmtMoney(C.num(it.price) * C.num(it.qty)))}</b></li>`).join('')}</ul>` : `<p class="empty small">${esc(t('emptyMine'))}</p>`}
+      ${mySharedLines(c, B.key)}
+      ${items.length ? `<dl class="est-lines tnum b-est">
+        <div><dt>${esc(t('rowFood'))}</dt><dd>${esc(C.fmtMoney(est.sub))}</dd></div>
+        ${est.delivery ? `<div><dt>${esc(t('estDelivery', { n: est.people }))}</dt><dd>${esc(C.fmtMoney(est.delivery))}</dd></div>` : ''}
+        ${est.fees ? `<div><dt>${esc(t('rowFees'))}</dt><dd>${esc(C.fmtMoney(est.fees))}</dd></div>` : ''}
+        ${est.tax ? `<div><dt>${esc(t('tax'))}</dt><dd>${esc(C.fmtMoney(est.tax))}</dd></div>` : ''}
+        ${prev > 0.009 ? `<div class="ok"><dt>${esc(t('prevCredit'))}</dt><dd>−${esc(C.fmtMoney(prev))}</dd></div>` : ''}
+        ${prev < -0.009 ? `<div class="warn"><dt>${esc(t('prevDebt'))}</dt><dd>+${esc(C.fmtMoney(-prev))}</dd></div>` : ''}
+        <div class="grand"><dt>${esc(t('basketEstTotal'))}</dt><dd>≈ ${esc(money(total))}</dd></div>
+      </dl>` : ''}
+      <p class="b-note">ℹ️ ${esc(t('estDisclaimer'))}</p>
+      <div class="b-btns">
+        ${B.ask && items.length ? `<button class="primary block big" data-act="basketConfirm">✓ ${esc(t('basketConfirm'))}</button>` : ''}
+        ${!B.ask && open && items.length && !m.done ? `<button class="primary block" data-act="basketConfirmAsk">✓ ${esc(t('doneBtn'))}</button>` : ''}
+        ${open ? `<button class="secondary block" data-act="basketEdit">✎ ${esc(B.ask ? t('basketFix') : t('basketEditBtn'))}</button>` : ''}
+      </div>
     </div></div>`;
   }
 
