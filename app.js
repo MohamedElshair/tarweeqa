@@ -1935,13 +1935,51 @@
       carried: `<span class="chip chip-picking">↪ ${esc(t('stCarried'))}</span>`,
       out: `<span class="chip chip-out">${esc(t('psOut'))}</span>`
     }[r.st] || '');
-    const amount = r => r.st === 'host' || r.st === 'out' ? '' : r.st === 'carried' ? money(r.carriedOwed) : r.total != null ? money(r.st === 'paid' ? r.total : r.due) : r.est ? '≈ ' + money(r.est) : '';
+    // what this order itself cost me (a bill's "total" excludes what was carried in from older bills)
+    const cost = r => { const I = r.h.invoice; return I ? C.num(I.self ? I.net : I.total) : (r.est || 0); };
+    const fmtN = n => C.fmtMoney(n);
+    const rest = r => r.h.restaurant || r.h.title || t('order');
     const filter = S.histFilter || 'all';
-    const shown = rows.filter(r => filter === 'all' || (filter === 'unpaid' && ['unpaid', 'partial', 'pending'].includes(r.st)));
+    const rests = [...new Set(rows.map(rest))];
+    const shown = rows.filter(r => filter === 'all' || (filter === 'unpaid' ? ['unpaid', 'partial', 'pending', 'carried'].includes(r.st) : rest(r) === filter));
+    // compare: orders with a bill, oldest → newest
+    const billed = rows.filter(r => r.h.invoice && cost(r) > 0).sort((x, y) => C.num(x.h.createdAt) - C.num(y.h.createdAt));
+    const max = Math.max(1, ...rows.map(cost));
+    const avg = billed.length ? C.round2(billed.reduce((a, r) => a + cost(r), 0) / billed.length) : 0;
+    const prevOf = new Map(); billed.forEach((r, i) => prevOf.set(r, billed[i - 1] || null));
+    const now = new Date(), monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const month = billed.filter(r => C.num(r.h.createdAt) >= monthStart);
+    const monthSum = C.round2(month.reduce((a, r) => a + cost(r), 0));
+    const tone = st => ({ paid: 'ok', host: 'ok', partial: 'sun', pending: 'sun', unpaid: 'bad', carried: 'bad' }[st] || 'mute');
+    const chart = billed.slice(-10);
+    const cmax = Math.max(1, ...chart.map(cost));
+    const day = ms => new Date(ms).toLocaleDateString(loc(), { day: 'numeric', month: 'numeric' });
+    const compare = chart.length > 1 ? `<section class="panel cmp" aria-label="${esc(t('cmpTitle'))}">
+        <div class="section-head"><p class="label">${esc(t('cmpTitle'))}</p><small class="muted">${esc(t('cmpAvg', { a: money(avg) }))}</small></div>
+        <div class="cmp-chart" role="img" aria-label="${esc(chart.map(r => rest(r) + ' ' + day(C.num(r.h.createdAt)) + ': ' + money(cost(r))).join('، '))}">
+          <span class="cmp-avg" style="bottom:${Math.round(avg / cmax * 100)}%"></span>
+          ${chart.map(r => `<span class="cmp-col"><small class="tnum">${esc(fmtN(Math.round(cost(r))))}</small><i class="t-${tone(r.st)}" style="height:${Math.max(4, Math.round(cost(r) / cmax * 100))}%"></i></span>`).join('')}
+        </div>
+        <div class="cmp-days" aria-hidden="true">${chart.map(r => `<small class="tnum">${esc(day(C.num(r.h.createdAt)))}</small>`).join('')}</div>
+        <div class="cmp-legend"><span><i class="t-ok"></i>${esc(t('invPaid'))}</span><span><i class="t-sun"></i>${esc(t('stPartial'))}</span><span><i class="t-bad"></i>${esc(t('invUnpaid'))}</span><span><i class="cmp-avg-key"></i>${esc(t('cmpAvgKey'))}</span></div>
+        ${month.length ? `<p class="muted small-text">${esc(t('cmpMonth', { a: money(monthSum), n: month.length }))}</p>` : ''}
+      </section>` : '';
+    const delta = r => {
+      if (!r.h.invoice || !prevOf.has(r)) return '';
+      const p = prevOf.get(r);
+      if (!p) return `<small class="delta muted">${esc(t('cmpFirst'))}</small>`;
+      const d = Math.round(cost(r) - cost(p));
+      if (!d) return `<small class="delta muted">${esc(t('cmpSame'))}</small>`;
+      return `<small class="delta ${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'} ${esc(t('cmpVsPrev', { a: fmtN(Math.abs(d)) }))}</small>`;
+    };
+    // under the amount: what is actually asked for now when it differs from the order's own cost
+    const sub = r => r.st === 'carried' ? t('remainAmt', { a: money(r.carriedOwed) })
+      : ['unpaid', 'partial', 'pending'].includes(r.st) && Math.abs(r.due - cost(r)) > 0.009 ? t('remainAmt', { a: money(r.due) }) : '';
     // wallet: what I paid beyond the newest bill from each host, plus credit that bill did not use up
     const newest = {};
     for (const r of rows) { const h = r.h; if (!h.invoice || h.invoice.self) continue; const k = (h.gid || '') + '|' + (h.ownerPhone || h.ownerName || ''); if (!newest[k] || C.num(h.createdAt) > C.num(newest[k].createdAt)) newest[k] = h; }
     const wallet = C.round2(Object.values(newest).reduce((a, h) => { const I = h.invoice, P = h.payment, pd = P && P.status === 'confirmed' ? C.num(P.amount) : 0; return a + Math.max(0, pd - C.num(I.net)) + Math.max(0, C.num(I.prev) - C.num(I.total)); }, 0));
+    const fbtn = (f, label) => `<button class="${filter === f ? 'on' : ''}" aria-pressed="${filter === f}" data-act="histFilter" data-f="${esc(f)}">${esc(label)}</button>`;
     return `<section class="stack">
       ${wallet > 0.009 ? `<div class="wallet-line">💳 <span>${esc(t('walletBal'))}</span><b class="tnum">${esc(money(wallet))}</b><small class="muted">${esc(t('walletHint'))}</small></div>` : ''}
       <div class="summary three">
@@ -1949,16 +1987,22 @@
         <div><span>${esc(t('waitingConfirmShort'))}</span><strong class="tnum">${esc(money(waiting))}</strong></div>
         <div><span>${esc(t('paidTotal'))}</span><strong class="tnum">${esc(money(paid))}</strong></div>
       </div>
-      <div class="section-head"><h2>${esc(t('myOrders'))} <small class="muted tnum">(${rows.length})</small></h2>
-        <div class="seg small"><button class="${filter === 'all' ? 'on' : ''}" data-act="histFilter" data-f="all">${esc(t('fAll'))}</button><button class="${filter === 'unpaid' ? 'on' : ''}" data-act="histFilter" data-f="unpaid">${esc(t('fUnpaid'))}</button></div></div>
+      ${compare}
+      <div class="section-head"><h2>${esc(t('myOrders'))} <small class="muted tnum">(${rows.length})</small></h2></div>
+      <div class="hist-filters" role="group" aria-label="${esc(t('myOrders'))}">${fbtn('all', t('fAll'))}${fbtn('unpaid', t('fUnpaid'))}${rests.length > 1 ? rests.map(n => fbtn(n, n)).join('') : ''}</div>
       ${shown.length ? `<ul class="hist">${shown.map(r => {
         const h = r.h, items = ((h.member || {}).items || []).map(i => (i.qty > 1 ? i.qty + '× ' : '') + i.name);
         const canOpen = !!(h.invoice && h.invoiceKey);
+        const c = cost(r), rr = S.restaurants.find(x => x.name === rest(r));
+        const amt = r.st === 'out' ? '' : c ? (h.invoice ? '' : '≈ ') + money(c) : '';
+        const note = sub(r);
         return `<li><button class="row-link hist-row" data-act="${canOpen ? 'openMyInvoice' : 'openHistCart'}" data-i="${esc(H.list.indexOf(h))}">
-          <span><strong>${esc(h.restaurant || h.title || t('order'))}</strong>
+          ${restLogo(rr || {}, rest(r))}
+          <span class="hist-main"><strong>${esc(rest(r))}</strong>
             <small class="muted">${esc(h.createdAt ? fmtDate(h.createdAt) : '')}${S.groups.length > 1 ? ' · ' + esc(h.groupName || '') : ''}</small>
-            ${items.length ? `<small class="muted hist-items">${esc(items.slice(0, 4).join(comma()))}${items.length > 4 ? '…' : ''}</small>` : ''}</span>
-          <span class="hist-side"><b class="tnum">${esc(amount(r))}</b>${chip(r)}${canOpen ? `<small class="muted">${esc(t('viewInvoice'))} ›</small>` : ''}</span>
+            ${items.length ? `<small class="muted hist-items">${esc(items.slice(0, 3).join(comma()))}${items.length > 3 ? '…' : ''}</small>` : ''}</span>
+          <span class="hist-side"><b class="tnum">${esc(amt)}</b>${chip(r)}${note ? `<small class="muted tnum">${esc(note)}</small>` : ''}</span>
+          ${c && r.st !== 'out' ? `<span class="hist-cmp"><span class="hist-bar" aria-hidden="true"><i class="t-${tone(r.st)}" style="width:${Math.max(3, Math.round(c / max * 100))}%"></i></span>${delta(r)}${canOpen ? `<small class="muted">${esc(t('viewInvoice'))} ›</small>` : ''}</span>` : ''}
         </button></li>`;
       }).join('')}</ul>` : `<p class="empty small">${esc(filter === 'unpaid' ? t('youOweNothing') : t('noOrders'))}</p>`}
     </section>`;
