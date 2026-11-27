@@ -963,3 +963,11 @@ html, body { overflow-x: clip; }
 .logout-btn:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
 .logout-btn .ico { width: 20px; height: 20px; }
 .center-txt { text-align: center; }
+.set-det > .form { gap: 14px; }
+.set-det .field > span { font-weight: 600; }
+.set-det .pin-wrap, .set-det .pin-wrap input { width: 100%; }
+.set-det .check { align-items: flex-start; gap: 10px; }
+.set-num { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-weight: 600; }
+.set-num > span { flex: 1 1 auto; min-width: 0; }
+.set-det .set-num input { width: 110px; flex: 0 0 110px; text-align: center; }
+.set-det + .set-det { margin-top: 10px; }
