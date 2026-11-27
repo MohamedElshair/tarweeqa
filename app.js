@@ -1562,6 +1562,7 @@
       <div class="ei-og"><span class="label">${esc(t('ogForItem'))}</span>
         ${(d.optGroups || []).length ? `<div class="og-flags">${d.optGroups.map(g => `<label class="chk-line"><input type="checkbox" data-change="itemOg" data-id="${esc(it.id)}" value="${esc(g.id)}"${(it.og || []).includes(g.id) ? ' checked' : ''}> ${esc(g.name || t('ogUnnamed'))}</label>`).join('')}</div>`
           : `<small class="muted">${esc(t('ogNoneYet'))}</small>`}
+        <button class="ghost small" data-act="ogGoPanel">＋ ${esc(t('ogAdd'))}</button>
       </div>
       <div class="btn-row">
         <button class="primary small" data-act="editItemDone">✓ ${esc(t('done'))}</button>
@@ -2154,6 +2155,7 @@
       toast(t('optAdded', { name: mi.name + (pk.opts.length ? ' (' + C.optText({ opts: pk.opts }) + ')' : '') }));
     },
     /* option groups (admin, restaurant editor) */
+    ogGoPanel: () => { syncDraft(); const prev = S.editItem; S.editItem = null; if (!prev || !redrawItem(prev)) render(true); saveBarState(); const pnl = $('#og-panel'); if (pnl) { pnl.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => { const n = $('#og-new-name'); if (n) n.focus({ preventScroll: true }); }, 400); } },
     ogAddChoice: el => { syncDraft(); const g = draftOg(el.dataset.g); if (!g) return; g.choices.push({ id: rid(6), name: '', price: 0 }); S.ogOpen = g.id; render(true); const ins = document.querySelectorAll(`[data-og="${CSS.escape(g.id)}"][data-c][data-f="name"]`); if (ins.length) ins[ins.length - 1].focus(); },
     ogDelChoice: el => { syncDraft(); const g = draftOg(el.dataset.g); if (!g) return; g.choices = g.choices.filter(c => c.id !== el.dataset.c); S.ogOpen = g.id; render(true); },
     ogDel: el => {
