@@ -322,7 +322,8 @@
 
   /* ---------- welcome & start ---------- */
   /* sign in / new account (live site). The phone number is the account, the PIN proves it is you. */
-  const pinInput = (id, name, ac) => `<input id="${id}" name="${name}" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="6" dir="ltr" class="pin-input tnum" autocomplete="${ac}">`;
+  // PIN boxes are hidden (dots) with a number pad; the eye shows the digits while typing if needed
+  const pinInput = (id, name, ac) => `<span class="pin-wrap"><input id="${id}" name="${name}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" dir="ltr" class="pin-input tnum" autocomplete="${ac}"><button type="button" class="pin-eye" data-act="pinEye" data-for="${id}" aria-label="${esc(t('pinShow'))}" aria-pressed="false">👁</button></span>`;
   function viewWelcome() {
     if (isLocal()) return viewWelcomeDemo();
     const step = S.authStep || 'phone';
@@ -2028,6 +2029,13 @@
   }
 
   const actions = {
+    pinEye: el => {
+      const f = document.getElementById(el.dataset.for); if (!f) return;
+      const show = f.type === 'password';
+      f.type = show ? 'text' : 'password';
+      el.setAttribute('aria-pressed', String(show)); el.setAttribute('aria-label', show ? t('pinHide') : t('pinShow'));
+      el.textContent = show ? '🙈' : '👁'; f.focus();
+    },
     authBack: () => { S.authStep = 'phone'; S.authMsg = null; render(true); },
     authMode: el => { S.authMode = el.dataset.m; S.authMsg = null; const ph = $('#l-phone') || $('#s-phone'); if (ph) S.authPhone = ph.value.trim(); render(true); },
     logout: async () => {

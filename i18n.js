@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    pinShow: 'اظهر الرقم السري', pinHide: 'اخفي الرقم السري',
     ledgerTitle: 'كل الناس — كل المجموعات', ledgerOwedAll: 'ليك عند الناس', ledgerWallets: 'في محافظهم', ledgerOwes: 'عليه {a}', ledgerWallet: 'محفظته {a}', ledgerClear: 'خالص',
     ledgerOrder: 'الطلب', ledgerBill: 'الحساب', ledgerPaid: 'دفع', ledgerWalletHint: 'الـ {a} اللي في محفظته هتتخصم لوحدها من فاتورته الجاية.', ledgerOpenGroup: 'افتح «{g}»', ledgerThisGroup: 'المجموعة المفتوحة دلوقتي: {g}',
     /* group-locked ordering, solo orders, sticky reminder (2026-11-27) */
@@ -279,6 +280,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    pinShow: 'Show PIN', pinHide: 'Hide PIN',
     ledgerTitle: 'Everyone — all groups', ledgerOwedAll: 'Owed to you', ledgerWallets: 'In their wallets', ledgerOwes: 'owes {a}', ledgerWallet: 'wallet {a}', ledgerClear: 'All clear',
     ledgerOrder: 'Order', ledgerBill: 'Bill', ledgerPaid: 'Paid', ledgerWalletHint: 'The {a} in the wallet comes off the next invoice automatically.', ledgerOpenGroup: 'Open "{g}"', ledgerThisGroup: 'Group open now: {g}',
     nagNone: 'Order open from {rest} — you haven\'t ordered', nagPicking: 'Your {rest} order isn\'t confirmed yet', nagUntil: 'closes at {t}',

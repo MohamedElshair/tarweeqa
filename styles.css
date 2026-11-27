@@ -857,3 +857,7 @@ html, body { overflow-x: clip; }
 .ledger-lines td { padding: 6px 2px; border-bottom: 1px dashed var(--line); vertical-align: top; }
 .ledger-lines tr.st-unpaid td:nth-child(3), .ledger-lines tr.st-partial td:nth-child(3) { color: var(--danger); font-weight: 600; }
 .ledger-lines .ok { color: var(--accent); font-weight: 600; }
+.pin-wrap { position: relative; display: block; }
+.pin-wrap .pin-input { width: 100%; padding-inline: 48px; }
+.pin-eye { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); width: 38px; height: 38px; border: 0; background: transparent; border-radius: 10px; cursor: pointer; font-size: 1.1rem; }
+.pin-eye:hover { background: var(--accent-soft); }
