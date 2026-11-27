@@ -1291,10 +1291,11 @@
             ${p.lines.slice().sort((a, b) => b.at - a.at).map(x => `<tr class="st-${state(x)}"><td>${esc(x.rest || '')}<small class="muted"> · ${esc(fmtDate(x.at))}${p.groups.length > 1 ? ' · ' + esc(x.group) : ''}</small></td><td>${esc(C.fmtMoney(x.total))}</td><td>${esc(C.fmtMoney(x.paid))}${state(x) === 'over' ? ` <small class="ok">+${esc(C.fmtMoney(x.paid - x.total))}</small>` : ''}</td></tr>`).join('')}
             </tbody></table>
             ${p.credit > 0.009 ? `<p class="muted small-text">${esc(t('ledgerWalletHint', { a: money(p.credit) }))}</p>` : ''}
-            <div class="btn-row">
-              ${p.owe > 0.009 && p.phone ? wa(waLink(p.phone, msg), t('remind')) : ''}
-              ${p.groups.filter(g => g.gid !== S.gid).map(g => `<button class="secondary small" data-act="ledgerGroup" data-id="${esc(g.gid)}">${esc(t('ledgerOpenGroup', { g: g.name }))}</button>`).join('')}
-            </div>
+            ${p.owe > 0.009 ? `<div class="debt-actions">
+              ${p.phone ? wa(waLink(p.phone, msg), t('remind')) : ''}
+              <div class="seg small">${['cash', 'instapay'].map(mt => `<button class="${(S.payMethod['l_' + p.key] || 'cash') === mt ? 'on' : ''}" data-act="payMethod" data-key="l_${esc(p.key)}" data-m="${mt}">${esc(t('method_' + mt))}</button>`).join('')}</div>
+              ${p.groups.filter(g => g.bal < -0.009).map(g => `<button class="secondary small" data-act="ledgerRecord" data-id="${esc(g.gid)}" data-key="${esc(p.key)}">${esc(t('gotIt', { a: C.fmtMoney(-g.bal) }))}${p.groups.length > 1 ? ' · ' + esc(g.name) : ''}</button>`).join('')}
+            </div>` : ''}
           </div>` : ''}
         </li>`;
       }).join('')}</ul>` : `<p class="empty small">${esc(t('nobodyOwes'))}</p>`}
@@ -1309,7 +1310,7 @@
     const tot = list => C.round2(list.reduce((s, p) => s + Math.abs(p.balance), 0));
     const myPI = { instapay: S.profile.instapay, wallet: S.profile.wallet };
     return `<h1>${esc(t('navMoney'))}</h1>
-      ${isSiteAdmin() ? ledgerPanel() + `<p class="label">${esc(t('ledgerThisGroup', { g: S.group.name }))}</p>` : ''}
+
       ${pend.length ? `<section class="stack">
         <div class="section-head"><h2>${esc(t('toConfirm'))}</h2><span class="chip chip-picking tnum">${pend.length}</span></div>
         <ul class="people">${pend.map(({ c, key, p }) => {
@@ -1319,7 +1320,7 @@
             <span class="p-side"><button class="primary small" data-act="confirmPayIn" data-cart="${esc(c.id)}" data-key="${esc(key)}">✓ ${esc(t('confirm'))}</button><button class="ghost small" data-act="rejectPayIn" data-cart="${esc(c.id)}" data-key="${esc(key)}">${esc(t('notReceived'))}</button></span></li>`;
         }).join('')}</ul></section>` : ''}
 
-      <section class="stack">
+      ${isSiteAdmin() ? ledgerPanel() : `<section class="stack">
         <div class="section-head"><h2>${esc(t('owedToYou'))}</h2><b class="tnum">${esc(money(tot(toMe)))}</b></div>
         ${toMe.length ? `<ul class="people">${toMe.map(p => {
           const msg = t('msgDebt', { name: p.name, total: money(-p.balance), n: p.carts.filter(x => x.state !== 'paid').length }) + payLines(myPI);
@@ -1335,7 +1336,7 @@
             </div></li>`;
         }).join('')}</ul>` : `<p class="empty small">${esc(t('nobodyOwes'))}</p>`}
         ${credits.length ? `<p class="muted small-text">${esc(t('creditsHeld'))}: ${esc(credits.map(p => p.name + ' ' + C.fmtMoney(p.balance)).join(comma()))}</p>` : ''}
-      </section>
+      </section>`}
 
       <section class="stack">
         <div class="section-head"><h2>${esc(t('youOwe'))}</h2><b class="tnum">${esc(money(tot(owe)))}</b></div>
@@ -3743,6 +3744,17 @@
     ledgerToggle: el => { S.ledgerOpen = S.ledgerOpen === el.dataset.key ? null : el.dataset.key; render(true); },
     ledgerRefresh: () => loadLedger(),
     ledgerGroup: el => { setGroup(el.dataset.id, true); go('money'); },
+    // someone paid everything they owe me in one group: record it on their latest order there (same as the group screen)
+    ledgerRecord: async el => {
+      const gid = el.dataset.id, key = el.dataset.key;
+      const g = ((S.ledger && S.ledger.groups) || []).find(x => x.gid === gid); if (!g) return;
+      const p = (C.balances(g.carts || [])[me()] || {})[key]; if (!p || p.balance > -0.009) return;
+      const c = (g.carts || []).find(x => x.id === p.carts[p.carts.length - 1].id); if (!c) return;
+      const prev = (c.payments || {})[key];
+      const before = prev && prev.status === 'confirmed' ? C.num(prev.amount) : 0;
+      const ok = await guardOk(S.store.patchCart(gid, c.id, { ['payments.' + key]: { amount: C.round2(before - p.balance), method: S.payMethod['l_' + key] || 'cash', status: 'confirmed', at: Date.now(), by: me() } }));
+      if (ok) { toast(t('saved')); loadLedger(); }
+    },
     // admin: one tap = the fixed group's order from this restaurant
     quickStart: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r || !isAdmin()) return;
