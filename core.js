@@ -35,6 +35,21 @@
     if (d.length === 10 && d.startsWith('1')) return cc + d;
     return d;
   }
+  // one account per mobile, however it is typed: 01003863737 = +201003863737 = 00201003863737 = 0201003863737 → 201003863737
+  // (same rules as tq_norm_phone in the database)
+  function normPhone(p) {
+    let d = latinDigits(p).replace(/\D/g, '');
+    if (d.startsWith('00')) d = d.slice(2);
+    if (d.startsWith('020') && d.length === 13) d = d.slice(1);
+    if (d.startsWith('200') && d.length === 13) d = '20' + d.slice(3);
+    if (d.startsWith('0') && d.length === 11) d = '20' + d.slice(1);
+    else if (d.startsWith('1') && d.length === 10) d = '20' + d;
+    return d;
+  }
+  // Egyptian mobile: 01 + 9 digits (10 digits after the leading 0)
+  const isEgMobile = p => /^201[0125]\d{8}$/.test(normPhone(p));
+  // the way people write it here: 01xxxxxxxxx
+  const localMobile = p => { const d = normPhone(p); return /^20\d{10}$/.test(d) ? '0' + d.slice(2) : d; };
   function isValidPhone(p) {
     const d = latinDigits(p).replace(/\D/g, '');
     return d.length >= 10 && d.length <= 15;
@@ -722,7 +737,7 @@
     return { km: round2(km), limit, state: km <= limit ? 'near' : 'far' };
   }
 
-  const api = { groupsFor, optText, optDelta, itemNote, pickOptions, optKey, distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, autoCategory, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
+  const api = { normPhone, isEgMobile, localMobile, groupsFor, optText, optDelta, itemNote, pickOptions, optKey, distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, autoCategory, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TarweeqaCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
