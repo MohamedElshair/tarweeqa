@@ -1773,35 +1773,31 @@
         <div class="set-row"><span class="set-lbl">${esc(t('theme'))}<small class="muted">${esc(th === 'auto' ? t('themeAutoHint') : '')}</small></span>${seg('setTheme', 'theme', th, [['auto', t('themeAuto')], ['light', t('themeLight')], ['dark', t('themeDark')]])}</div>
         <div class="set-row"><span class="set-lbl">${esc(t('language'))}</span>${seg('setLang', 'lang', S.lang, [['ar', 'العربية'], ['en', 'English']])}</div>
       </section>
-      <details class="panel set-det">
+      <details class="panel set-det" data-set="details"${openSet('details')}>
         <summary>${esc(t('myDetailsPay'))}</summary>
         <form class="form" data-submit="profile" novalidate>
           <label class="field"><span>${esc(t('yourName'))}</span><input id="p-name" name="name" value="${esc(p.name)}"></label>
           <label class="field"><span>${esc(t('yourPhone'))}</span><input id="p-phone" name="phone" type="tel" dir="ltr" value="${esc(ph)}"${cloud ? ` readonly aria-describedby="p-phone-note"` : ''}>${cloud ? `<small id="p-phone-note">${esc(t('phoneIsAccount'))}</small>` : ''}</label>
-          <div class="grid2">
             <label class="field"><span>${esc(t('instapayAny'))}</span><input id="p-insta" name="instapay" dir="ltr" value="${esc(instaValue(p))}" placeholder="name@instapay / https://ipn.eg/…"></label>
             <label class="field"><span>${esc(t('wallet'))}</span><input id="p-wallet" name="wallet" type="tel" dir="ltr" value="${esc(p.wallet || '')}" placeholder="01xxxxxxxxx"></label>
-          </div>
           <p class="form-error" id="p-err" hidden></p>
           <button class="primary block" type="submit">${esc(t('save'))}</button>
         </form>
       </details>
-      <details class="panel set-det">
+      <details class="panel set-det" data-set="host"${openSet('host')}>
         <summary>${esc(t('hostOptsProfile'))}</summary>
         <div class="form">
           <p class="muted small-text">${esc(t('hostOptsProfileHint'))}</p>
           <label class="check"><input type="checkbox" id="ph-exempt" data-change="profHostExempt" ${p.hostExempt ? 'checked' : ''}><span>${esc(t('hostExemptLbl'))}</span></label>
-          <label class="field inline-field"><span>${esc(t('hostFeeLbl'))}</span><input id="ph-fee" class="tnum" inputmode="decimal" data-change="profHostFee" value="${C.num(p.hostFee) ? esc(p.hostFee) : ''}" placeholder="0"></label>
+          <label class="set-num"><span>${esc(t('hostFeeLbl'))}</span><input id="ph-fee" class="tnum" inputmode="decimal" data-change="profHostFee" value="${C.num(p.hostFee) ? esc(p.hostFee) : ''}" placeholder="0"></label>
         </div>
       </details>
       ${isLocal() ? `<button class="danger-ghost" data-act="resetDemo">${esc(S.confirmKey === 'reset' ? t('confirmAgain') : t('resetDemo'))}</button>` : `
-      <details class="panel set-det">
+      <details class="panel set-det" data-set="pin"${openSet('pin')}>
         <summary>${esc(t('pinChangeTitle'))}</summary>
         <form class="form" data-submit="changePin" novalidate>
-          <div class="grid2">
             <label class="field"><span>${esc(t('pinOld'))}</span>${pinInput('c-old', 'old', 'current-password')}</label>
             <label class="field"><span>${esc(t('pinNew'))}</span>${pinInput('c-pin', 'pin', 'new-password')}</label>
-          </div>
           <p class="form-error" id="c-err" hidden></p>
           <button class="secondary" type="submit">${esc(t('pinChangeBtn'))}</button>
         </form>
@@ -1810,6 +1806,7 @@
       <button class="logout-btn block" data-act="logout"><svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> ${esc(t('logout'))}</button>
       <p class="muted small-text center-txt">${esc(t('logoutHint'))}</p>`}`;
   }
+  const openSet = k => (S.openSets || {})[k] ? ' open' : '';
   // my picture, or the first letter of my name
   function meAvatar(cls) {
     const p = S.profile || {};
@@ -4120,6 +4117,11 @@
     if (el.tagName === 'A' && el.dataset.keep) { setTimeout(() => fn(el), 0); return; }   // open the link and also act
     e.preventDefault(); fn(el);
   });
+  // remember which profile sections are open, so a re-render does not fold them back
+  document.addEventListener('toggle', e => {
+    const d = e.target; if (!d || !d.dataset || !d.dataset.set) return;
+    S.openSets = Object.assign({}, S.openSets, { [d.dataset.set]: d.open });
+  }, true);
   document.addEventListener('change', e => {
     const el = e.target.closest('[data-change]');
     if (!el) return;
