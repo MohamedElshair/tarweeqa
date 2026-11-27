@@ -291,7 +291,7 @@ window.TARWEEQA_I18N = {
     tabForOthers: 'اطلب لحد', notOrderingNote: 'إنت بتدير الطلب الجماعي ده بس ومش بتطلب فيه.', iOrderLbl: 'أنا كمان هطلب معاهم',
     iOrderOnHint: 'إنت ضمن الناس اللي بتطلب، وهيوصلك التذكير والحساب زيهم.', iOrderOffHint: 'إنت بتدير بس: مش هتظهر في قايمة الناس ولا التذكير ولا الحساب. تقدر تطلب لحد تاني من «بطلب لـ».',
     iOrderOnToast: 'تمام، إنت هتطلب معاهم', iOrderOffToast: 'تمام، إنت بتدير بس ومش بتطلب',
-    gDeleteTitle: 'امسح الطلب الجماعي', gDeleteHint: 'هيختفي من عند الكل، والرابط هيبطل يشتغل، والطلب اليومي التلقائي هيقف. الطلبات القديمة والفواتير والفلوس اللي على الناس مش هتتمسح، وتقدر ترجّعه من صفحة الإدارة.',
+    gDeleteTitle: 'امسح الطلب الجماعي', gDeleteHint: 'هيختفي من عند الكل، والرابط هيبطل يشتغل، والطلب اليومي التلقائي هيقف. أي طلب لسه مفتوح هيتلغي وسلة كل واحد فيه هتتفضى. الطلبات اللي اتطلبت والفواتير والفلوس اللي على الناس مش هتتمسح، وتقدر ترجّعه من صفحة الإدارة.',
     gDeleteBtn: 'امسح الطلب الجماعي', gDeleteConfirm: 'أيوه، امسحه', gDeleteSure: 'متأكد إنك عايز تمسح «{g}»؟', gDeleteOpen: 'فيه {n} طلب مفتوح دلوقتي هيختفي كمان.',
     gDeleted: 'اتمسح «{g}»', gRestored: 'رجع تاني', gDeletedList: 'طلبات جماعية ممسوحة ({n})', gDeletedOn: 'اتمسح {d}', gRestoreBtn: 'رجّعه',
     /* groups: manage, schedule, repeat, money (2026-11-28) */
@@ -609,7 +609,7 @@ window.TARWEEQA_I18N = {
     tabForOthers: 'Order for someone', notOrderingNote: "You manage this group order but don't order in it.", iOrderLbl: "I'm ordering with them too",
     iOrderOnHint: "You're one of the people ordering, with reminders and a bill like everyone else.", iOrderOffHint: "You only manage: you're left out of the people list, reminders and the bill. You can still order for someone else.",
     iOrderOnToast: "OK, you're ordering with them", iOrderOffToast: "OK, you only manage and don't order",
-    gDeleteTitle: 'Delete the group order', gDeleteHint: "It disappears for everyone, the link stops working and the daily order stops. Past orders, invoices and money owed are kept, and you can bring it back from the Admin page.",
+    gDeleteTitle: 'Delete the group order', gDeleteHint: "It disappears for everyone, the link stops working and the daily order stops. Any order still open is cancelled and everyone's basket in it is emptied. Orders already placed, invoices and money owed are kept, and you can bring it back from the Admin page.",
     gDeleteBtn: 'Delete the group order', gDeleteConfirm: 'Yes, delete it', gDeleteSure: 'Delete "{g}"?', gDeleteOpen: 'It has {n} open order(s) that will disappear too.',
     gDeleted: '"{g}" deleted', gRestored: 'Brought back', gDeletedList: 'Deleted group orders ({n})', gDeletedOn: 'deleted {d}', gRestoreBtn: 'Bring back',
     /* groups: manage, schedule, repeat, money (2026-11-28) */

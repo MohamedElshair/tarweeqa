@@ -61,7 +61,12 @@
     sub(f) { this.subs.add(f); setTimeout(f, 0); return () => this.subs.delete(f); }
 
     onMyGroups(cb) { return this.sub(() => cb(Object.values(this.data.groups).filter(g => g.memberUids.includes(this.uid()) && !g.deletedAt).map(clone))); }
-    async deleteGroup(gid) { const g = this.data.groups[gid]; if (!g) return; g.deletedAt = Date.now(); if (g.schedule) g.schedule.on = false; this.persist(); }
+    async deleteGroup(gid) {
+      const g = this.data.groups[gid]; if (!g) return; g.deletedAt = Date.now(); if (g.schedule) g.schedule.on = false;
+      // orders that never went through are cancelled and their baskets emptied; placed orders keep their invoices
+      for (const c of Object.values(this.data.carts || {})) if (c.groupId === gid && (c.stage === 'voting' || c.stage === 'ordering')) Object.assign(c, { stage: 'cancelled', cancelledAt: Date.now(), members: {} });
+      this.persist();
+    }
     async restoreGroup(gid) { const g = this.data.groups[gid]; if (g) { delete g.deletedAt; this.persist(); } }
     onGroup(gid, cb) { return this.sub(() => cb(this.data.groups[gid] && !this.data.groups[gid].deletedAt ? clone(this.data.groups[gid]) : null)); }
     async createGroup(g) { const id = rid(); this.data.groups[id] = Object.assign(clone(g), { id }); this.persist(); return id; }
@@ -80,7 +85,7 @@
     async patchRestaurant(gid, id, patch) { const r = this.data.restaurants[id]; if (!r) return; for (const k of Object.keys(patch)) setPath(r, k, patch[k]); this.persist(); }
     async deleteRestaurant(gid, id) { delete this.data.restaurants[id]; this.persist(); }
 
-    onGroupCarts(gid, cb) { return this.sub(() => cb(Object.values(this.data.carts).filter(c => c.groupId === gid).map(clone))); }
+    onGroupCarts(gid, cb) { return this.sub(() => cb(Object.values(this.data.carts).filter(c => c.groupId === gid && c.stage !== 'cancelled').map(clone))); }
     onCart(gid, id, cb) { return this.sub(() => cb(this.data.carts[id] ? clone(this.data.carts[id]) : null)); }
     async createCart(gid, c) { const id = rid(); this.data.carts[id] = Object.assign(clone(c), { id, groupId: gid }); this.persist(); return id; }
     async setMember(gid, cartId, key, m) { setPath(this.data.carts[cartId], 'members.' + key, m); this.persist(); }

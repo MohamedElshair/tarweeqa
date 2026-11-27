@@ -4615,7 +4615,15 @@
     S.gid = gid; S.group = null; S.restaurants = []; S.carts = [];
     LS.set('tarweeqa.gid', gid);
     const err = e => console.warn(e);
-    groupUnsubs.push(S.store.onGroup(gid, g => { S.group = g; if (!g) { S.gid = null; LS.del('tarweeqa.gid'); } scheduleRender(); }, err));
+    groupUnsubs.push(S.store.onGroup(gid, g => {
+      S.group = g;
+      if (!g) {   // deleted (or gone): drop it, its orders and reminders, and move to another group if there is one
+        S.gid = null; S.carts = []; S.restaurants = []; LS.del('tarweeqa.gid');
+        const next = (S.groups || []).find(x => x.id !== gid && !x.deletedAt);
+        if (next) return setGroup(next.id, true);
+      }
+      scheduleRender();
+    }, err));
     groupUnsubs.push(S.store.onRestaurants(gid, list => { S.restaurants = list; scheduleRender(); }, err));
     groupUnsubs.push(S.store.onGroupCarts(gid, list => { S.carts = list; scheduleRender(); }, err));
     if (!silent) go('home');
