@@ -162,12 +162,15 @@
 
   /* ---------- rendering ---------- */
   let renderQueued = false;
+  let pressing = false, pressT = 0;   // set by the pointer listeners below
   function render(force) {
     const app = $('#app');
     const ae = document.activeElement;
     if (!force && ae && app.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && !['checkbox', 'radio', 'button'].includes(ae.type)) {
       S.dirty = true; return;
     }
+    // a finger/mouse is pressing something: drawing the page now would swallow that tap. Draw right after it.
+    if (!force && pressing) { S.dirty = true; return; }
     S.dirty = false;
     document.documentElement.lang = S.lang;
     document.documentElement.dir = S.lang === 'ar' ? 'rtl' : 'ltr';
@@ -4156,13 +4159,19 @@
     const fn = submits[form.dataset.submit];
     if (fn) fn(form);
   });
-  document.addEventListener('focusout', () => {
-    setTimeout(() => {
-      const ae = document.activeElement;
-      const typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && !['checkbox', 'radio', 'button'].includes(ae.type);
-      if (S.dirty && !typing) render();
-    }, 120);
-  });
+  function isTyping() {
+    const ae = document.activeElement;
+    return !!ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && !['checkbox', 'radio', 'button'].includes(ae.type);
+  }
+  function catchUp() { if (S.dirty && !pressing && !isTyping()) render(); }
+  document.addEventListener('focusout', () => { setTimeout(catchUp, 120); });
+  // hold back background redraws while something is being pressed, so the tap/click always lands
+  // (e.g. pressing "Add" right after typing: a redraw between press and release used to eat the click and the typed text)
+  const press = () => { pressing = true; clearTimeout(pressT); pressT = setTimeout(() => { pressing = false; catchUp(); }, 3000); };
+  const release = () => { clearTimeout(pressT); pressT = setTimeout(() => { pressing = false; catchUp(); }, 60); };
+  document.addEventListener('pointerdown', press, true);
+  document.addEventListener('pointerup', release, true);
+  document.addEventListener('pointercancel', release, true);
 
   /* ---------- data subscriptions ---------- */
   let groupUnsubs = [];
