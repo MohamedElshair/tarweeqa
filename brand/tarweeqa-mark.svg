@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="260" viewBox="20 0 200 260" role="img"><title>ترويقة</title><path d="M100 42C88 30 112 22 100 8" fill="none" stroke="#2B1D14" stroke-width="9" stroke-linecap="round"/>
+<path d="M140 42C128 30 152 22 140 8" fill="none" stroke="#2B1D14" stroke-width="9" stroke-linecap="round"/>
+<path d="M120 150L120 50A100 100 0 0 1 206.6 200Z" fill="#E5432D" stroke="#FFF6E9" stroke-width="10" stroke-linejoin="round"/>
+<path d="M120 150L206.6 200A100 100 0 0 1 33.4 200Z" fill="#F6B42C" stroke="#FFF6E9" stroke-width="10" stroke-linejoin="round"/>
+<path d="M120 150L33.4 200A100 100 0 0 1 120 50Z" fill="#1F8A70" stroke="#FFF6E9" stroke-width="10" stroke-linejoin="round"/>
+<circle cx="120" cy="150" r="20" fill="#FFF6E9"/></svg>

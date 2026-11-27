@@ -295,7 +295,7 @@
   }
 
   /* icons */
-  function logoSvg() { return `<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="22" r="15" fill="var(--accent)"/><path d="M8 22a12 12 0 0 0 24 0z" fill="var(--sun)"/><path d="M13 13c1-3 3-3 3-6M20 12c1-3 3-3 3-6M27 13c1-3 3-3 3-6" stroke="var(--fg)" stroke-width="2" fill="none" stroke-linecap="round" opacity=".55"/></svg>`; }
+  function logoSvg() { return `<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M16.5 7.5c-1-1.3.9-2.2 0-4M23.5 7.5c-1-1.3.9-2.2 0-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><path d="M20.87 23L20.87 8.5A14.5 14.5 0 0 1 33.42 30.25Z" fill="#E5432D"/><path d="M20 24.5L32.56 31.75A14.5 14.5 0 0 1 7.44 31.75Z" fill="#F6B42C"/><path d="M19.13 23L6.58 30.25A14.5 14.5 0 0 1 19.13 8.5Z" fill="#1F8A70"/></svg>`; }
   const svg = d => `<svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   const icoHome = () => svg('M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z');
   const icoMenu = () => svg('M5 4h14v16H5zM8 8h8M8 12h8M8 16h5');
