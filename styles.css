@@ -1007,3 +1007,28 @@ html, body { overflow-x: clip; }
 .nag-bar.calm.is-done { border-color: var(--accent); }
 .nag-bar { animation-name: none; }
 .nag-bar:not(.calm) { animation: nag-pulse 2.4s ease-in-out 1s infinite; }
+
+/* ---------- groups: manage, schedule, repeat & money prompts (2026-11-28) ---------- */
+a.link { color: var(--accent); text-decoration: none; }
+.g-title { display: flex; align-items: center; gap: 6px; }
+.g-title h1 { margin: 0; }
+.g-rename { flex: 1; }
+.g-rename input { flex: 1; min-width: 0; }
+.person.editing { border-color: var(--accent); }
+.person-edit { list-style: none; }
+.person-edit .panel { margin-top: -4px; }
+.icon-btn.wa-mini { display: inline-grid; place-items: center; color: var(--wa); }
+.icon-btn.wa-mini .ico { width: 18px; height: 18px; }
+.schedule.on { border-color: var(--ok); }
+.switch { display: inline-flex; align-items: center; gap: 8px; font-size: .88rem; font-weight: 600; cursor: pointer; }
+.switch input { width: 40px; height: 22px; accent-color: var(--ok); }
+.sch-days { display: flex; flex-wrap: wrap; gap: 6px; }
+.day-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.day-chip span { display: inline-block; padding: 7px 12px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--surface); font-size: .85rem; font-weight: 600; cursor: pointer; }
+.day-chip input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.day-chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.repeat-ask { border: 1.5px solid var(--accent); }
+.rp-items { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rp-items li { display: flex; justify-content: space-between; gap: 10px; font-size: .92rem; }
+.debt-ask { border: 1.5px solid var(--sun); background: var(--sun-soft); }
+.wallet-note, .debt-note { font-weight: 600; }

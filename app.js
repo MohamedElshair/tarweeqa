@@ -177,6 +177,11 @@
     document.title = t('appName');
     app.innerHTML = view();
     tick();
+    // a question waiting for the person (same order as last time? / old balance): bring it into view on opening the order
+    if (S.route.name === 'cart' && S.askScroll && document.querySelector('.repeat-ask, .debt-ask')) {
+      S.askScroll = false;
+      setTimeout(() => { const a = document.querySelector('.repeat-ask, .debt-ask'); if (a) a.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 250);
+    }
     if (S.route.name === 'restaurant' && S.draft && document.querySelector('.save-bar')) {
       // the "as it was" copy is taken once the page is on screen, so untouched fields never count as changes
       if (S.draftBase == null) { syncDraft(); S.draftBase = draftSig(); }
@@ -189,6 +194,7 @@
     requestAnimationFrame(() => { renderQueued = false; render(); });
   }
   function go(name, extra) {
+    S.askScroll = name === 'cart';
     S.route = Object.assign({ name }, extra || {});
     S.confirmKey = null;
     if (name !== 'cart') S.actFor = null;
@@ -750,7 +756,7 @@
     return `<section class="share">
       <p class="label">${esc(t('shareTitle'))}</p>
       <div class="share-row">
-        <code class="link" dir="ltr">${esc(link)}</code>
+        <a class="link" dir="ltr" href="${esc(link)}">${esc(link)}</a>
         <button class="secondary small" data-act="copy" data-text="${esc(link)}">${esc(t('copyLink'))}</button>
         ${wa(waLink('', inviteText(c, st)), t('shareWa'))}
       </div>
@@ -790,6 +796,50 @@
   }
 
   /* my order (or the host ordering for someone) */
+  // the person's latest earlier order that can be repeated here: same restaurant first, else any order whose items are all on this menu
+  function lastOrderOf(c, key) {
+    const byName = {}; for (const mi of c.menu || []) byName[C.normName(mi.name)] = mi;
+    const prior = S.carts.filter(x => x.id !== c.id && x.createdAt < (c.createdAt || Date.now()) + 1 && x.members && x.members[key] && x.members[key].status !== 'out' && (x.members[key].items || []).length)
+      .sort((a, b) => b.createdAt - a.createdAt);
+    for (const x of prior) {
+      const its = x.members[key].items.filter(i => C.num(i.qty) > 0 && !i.shared);
+      if (!its.length) continue;
+      const same = x.restaurantId === c.restaurantId;
+      const found = its.filter(i => byName[C.normName(i.name)]);
+      if (!same && found.length < its.length) continue;
+      const use = same ? its : found;
+      return { id: x.id, at: x.createdAt, rest: (x.restaurant || {}).name || '', items: use.map(i => { const mi = byName[C.normName(i.name)]; return Object.assign({}, i, mi ? { price: C.round2(C.num(mi.price) + C.optDelta(i)) } : {}); }),
+        missing: same ? its.filter(i => !byName[C.normName(i.name)] && !i.custom).map(i => i.name) : [] };
+    }
+    return null;
+  }
+  function moneyNotice(c, key, prev, m) {
+    if (prev > 0.009) return `<section class="banner ok wallet-note"><span>💰 ${esc(t('walletNotice', { a: money(prev) }))}</span></section>`;
+    if (prev > -0.009) return '';
+    const owed = -prev;
+    const P = (pairs()[c.ownerId] || {})[key];
+    const unpaid = P ? P.carts.filter(x => x.total - x.paid > 0.009) : [];
+    const reported = unpaid.map(x => cartById(x.id)).filter(x => x && x.payments && x.payments[key] && x.payments[key].status === 'reported');
+    const where = unpaid.slice(-3).map(x => (x.rest || t('order')) + ' (' + fmtAgo(x.at) + ')').join(comma());
+    if (reported.length) return `<section class="banner soft"><span>⏳ ${esc(t('debtReported', { a: money(owed), host: c.ownerName }))}</span></section>`;
+    if (m.carry === 'add') return `<section class="banner warn debt-note"><span>➕ ${esc(t('debtAdded', { a: money(owed) }))}</span><button class="ghost small" data-act="debtChoice" data-v="">${esc(t('change'))}</button></section>`;
+    const pi = c.payInfo || {};
+    const method = S.payMethod['o_' + c.ownerId] || 'instapay';
+    return `<section class="panel debt-ask">
+      <p class="label">⚠️ ${esc(t('debtAsk', { a: money(owed) }))}</p>
+      <p class="muted small-text">${esc(t('debtFrom', { w: where }))}</p>
+      ${m.carry === 'pay' ? `${payButtons(pi, owed)}
+        <div class="pay-row">
+          <div class="seg small">${METHODS.map(mt => `<button class="${method === mt ? 'on' : ''}" data-act="payMethod" data-key="o_${esc(c.ownerId)}" data-m="${mt}">${esc(t('method_' + mt))}</button>`).join('')}</div>
+          <button class="primary small" data-act="reportDebt" data-host="${esc(c.ownerId)}">${esc(t('iPaidAll', { a: C.fmtMoney(owed) }))}</button>
+        </div>
+        <button class="ghost small" data-act="debtChoice" data-v="add">${esc(t('debtAddInstead'))}</button>`
+      : `<div class="btn-row">
+          <button class="primary" data-act="debtChoice" data-v="pay">💸 ${esc(t('debtPayNow'))}</button>
+          <button class="secondary" data-act="debtChoice" data-v="add">➕ ${esc(t('debtAddToday'))}</button>
+        </div>`}
+    </section>`;
+  }
   function tabMine(c, st, host) {
     const ppl = people(c);
     const key = (host && S.actFor && ppl[S.actFor]) ? S.actFor : me();
@@ -832,18 +882,29 @@
       <p class="b-note">ℹ️ ${esc(t('estDisclaimer'))}</p>` : `<small class="muted">${esc(items.some(i => i.noPrice) ? t('estimateNoPrice') : t('estimateEmpty'))}</small>`}
     </section>`;
 
-    // repeat last order from this restaurant
+    // the last order: "same as last time?" — shown as a question until he answers it
     let repeat = '';
-    if (canEdit && !items.length) {
-      const last = S.carts.filter(x => x.id !== c.id && x.restaurantId === c.restaurantId && x.members && x.members[key] && (x.members[key].items || []).length && x.members[key].status !== 'out')
-        .sort((a, b) => b.createdAt - a.createdAt)[0];
+    const rpKey = 'tarweeqa.rpSkip.' + c.id + '.' + key;
+    if (canEdit && !items.length && m.status !== 'out' && !LS.get(rpKey)) {
+      const last = lastOrderOf(c, key);
       if (last) {
-        const li = last.members[key].items;
-        repeat = `<button class="repeat" data-act="repeatLast" data-id="${esc(last.id)}">
-          <span><strong>${esc(t('repeatLast'))}</strong><small class="muted">${esc(li.map(i => (i.qty > 1 ? i.qty + '× ' : '') + i.name).join(comma()))}</small></span>
-          <b class="tnum">${esc(money(C.memberSubtotal(last.members[key])))}</b></button>`;
+        const li = last.items;
+        repeat = `<section class="panel repeat-ask">
+          <p class="label">🔁 ${esc(forOther ? t('rpAskOther', { name: who }) : t('rpAsk'))}</p>
+          <p class="muted small-text">${esc(t('rpFrom', { r: last.rest, d: fmtAgo(last.at) === t('yesterday') ? t('yesterday') : fmtDate(last.at) }))}</p>
+          <ul class="rp-items">${li.map(i => `<li><span>${esc((i.qty > 1 ? i.qty + ' × ' : '') + C.fixSpelling(i.name))}${C.itemNote(i) ? ` <small class="muted">${esc(C.itemNote(i))}</small>` : ''}</span><b class="tnum">${esc(C.fmtMoney(C.num(i.price) * C.num(i.qty)))}</b></li>`).join('')}</ul>
+          ${last.missing.length ? `<p class="small-text warn-text">⚠ ${esc(t('rpMissing', { items: last.missing.map(C.fixSpelling).join(comma()) }))}</p>` : ''}
+          <div class="btn-row">
+            <button class="primary" data-act="repeatLast" data-id="${esc(last.id)}" data-done="1">✓ ${esc(t('rpYes'))}</button>
+            <button class="secondary" data-act="repeatLast" data-id="${esc(last.id)}">✎ ${esc(t('rpEdit'))}</button>
+            <button class="ghost" data-act="repeatSkip" data-k="${esc(rpKey)}">${esc(t('rpNo'))}</button>
+          </div>
+        </section>`;
       }
     }
+
+    // money from before: a wallet to use up, or an unpaid share to pay now or add to today's bill
+    const money0 = forOther || c.ownerId === key ? '' : moneyNotice(c, key, prev, m);
 
     const qtyById = {};
     for (const it of items) if (it.menuId) qtyById[it.menuId] = (qtyById[it.menuId] || 0) + C.num(it.qty);
@@ -909,7 +970,7 @@
       </section>` : '';
 
     return `<section class="stack">
-        ${picker}${attend}${estBox}${repeat}
+        ${picker}${attend}${money0}${repeat}${estBox}
         <div class="section-head"><h2>${esc(forOther ? t('itemsOf', { name: who }) : t('myItems'))}</h2>${items.length ? `<button class="ghost small" data-act="basketOpen" data-id="${esc(c.id)}" data-key="${esc(key)}">🧺 ${esc(t('basketView'))}</button>` : ''}</div>
         ${myList}${mySharedLines(c, key)}${doneBlock}
       </section>${host && st !== 'settled' ? sharedPanel(c) : ''}${menu}`;
@@ -1431,53 +1492,139 @@
     const link = groupLink(S.gid);
     const ppl = people(null);
     const keys = Object.keys(ppl).sort((a, b) => (a === g.ownerId ? -1 : b === g.ownerId ? 1 : 0) || ppl[a].name.localeCompare(ppl[b].name));
-    return `<h1>${esc(g.name)}</h1>
+    const adm = isAdmin();
+    const editing = S.gEdit;   // the member whose row is open for editing
+    const renaming = S.gRename && adm;
+    const memberRow = k => {
+      const p = ppl[k];
+      const real = !p.guest;
+      const canRemove = adm && k !== g.ownerId && k !== me() && (p.guest || isSiteAdmin() || isLocal());
+      const rk = 'gRm_' + k;
+      const row = `<li class="person${editing === k ? ' editing' : ''}">
+          <span class="avatar sm${p.guest ? ' ghosted' : ''}">${esc(initial(p.name))}</span>
+          <span class="p-main"><strong>${esc(p.name)}${k === me() ? ` <small class="muted">(${esc(t('you'))})</small>` : ''}</strong>${adm ? `<small class="muted tnum" dir="ltr">${esc(localPhone(p.phone || ''))}</small>` : ''}${adm && p.guest ? `<small class="muted">${esc(p.phone ? t('gInvitedNotJoined') : t('gNoApp'))}</small>` : ''}</span>
+          <span class="p-side">${k === g.ownerId ? `<span class="chip chip-ordered">${esc(t('roleOwner'))}</span>` : (g.adminIds || []).includes(k) ? `<span class="chip chip-open">${esc(t('roleAdmin'))}</span>` : ''}${p.guest ? `<span class="chip chip-out">${esc(t('guest'))}</span>` : ''}
+            ${adm && p.guest && p.phone ? `<a class="icon-btn wa-mini" href="${esc(waLink(p.phone, t('msgGroupInviteTo', { name: p.name, g: g.name, link })))}" target="_blank" rel="noopener" aria-label="${esc(t('shareWa'))}">${waIcon()}</a>` : ''}
+            ${adm ? `<button class="icon-btn" data-act="gEdit" data-key="${esc(k)}" aria-label="${esc(t('edit'))}">✎</button>` : ''}
+          </span>
+        </li>`;
+      if (editing !== k) return row;
+      return row + `<li class="person-edit"><form class="panel form" data-submit="gMember" data-key="${esc(k)}" novalidate>
+          <label class="field"><span>${esc(t('personName'))}</span><input name="name" value="${esc(p.name)}"></label>
+          ${real ? `<p class="muted small-text">${esc(t('gPhoneIsLogin', { p: localPhone(p.phone || '') }))}</p>`
+            : `<label class="field"><span>${esc(t('personPhoneOpt'))}</span><input name="phone" type="tel" dir="ltr" value="${esc(localPhone(p.phone || ''))}"></label>`}
+          <div class="btn-row">
+            <button class="primary small" type="submit">${esc(t('save'))}</button>
+            <button class="ghost small" type="button" data-act="gEdit" data-key="">${esc(t('cancel'))}</button>
+            ${canRemove ? `<button class="danger-ghost small" type="button" data-act="gRemove" data-key="${esc(k)}">${esc(S.confirmKey === rk ? t('confirmAgain') : t('gRemoveFrom', { g: g.name }))}</button>` : ''}
+          </div>
+          ${adm && k !== g.ownerId && !canRemove && real ? `<p class="muted small-text">${esc(t('gRemoveSiteOnly'))}</p>` : ''}
+        </form></li>`;
+    };
+    return `<div class="g-title">${renaming
+        ? `<form class="inline-form g-rename" data-submit="renameGroup" novalidate><input id="g-rename" name="name" value="${esc(g.name)}" aria-label="${esc(t('groupName'))}"><button class="primary small" type="submit">${esc(t('save'))}</button><button class="ghost small" type="button" data-act="gRename">${esc(t('cancel'))}</button></form>`
+        : `<h1>${esc(g.name)}</h1>${adm ? `<button class="icon-btn" data-act="gRename" aria-label="${esc(t('rename'))}">✎</button>` : ''}`}</div>
       <section class="share">
         <p class="label">${esc(t('inviteTitle'))}</p>
         <div class="share-row">
-          <code class="link" dir="ltr">${esc(link)}</code>
+          <a class="link" dir="ltr" href="${esc(link)}">${esc(link)}</a>
+          <a class="secondary small btn-link" href="${esc(link)}">↗ ${esc(t('openLink'))}</a>
           <button class="secondary small" data-act="copy" data-text="${esc(link)}">${esc(t('copyLink'))}</button>
           ${wa(waLink('', t('msgGroupInvite', { name: g.name, link })), t('shareWa'))}
         </div>
         <small class="muted">${esc(t('inviteHint'))}</small>
       </section>
+      ${adm ? scheduleView(g) : (g.schedule && g.schedule.on ? `<p class="banner soft"><span>⏰ ${esc(scheduleText(g.schedule))}</span></p>` : '')}
+      <section>
+        <div class="section-head"><h2>${esc(t('membersN', { n: keys.length }))}</h2></div>
+        <ul class="people">${keys.map(memberRow).join('')}</ul>
+      </section>
+      ${adm ? `<form class="panel form" data-submit="addGuest" novalidate>
+        <p class="label">${esc(t('gAddPerson'))}</p>
+        <p class="muted small-text">${esc(t('gAddPersonHint'))}</p>
+        <div class="grid2">
+          <label class="field"><span>${esc(t('personName'))}</span><input id="gu-name" name="name"></label>
+          <label class="field"><span>${esc(t('personPhoneOpt'))}</span><input id="gu-phone" name="phone" type="tel" dir="ltr" placeholder="01xxxxxxxxx"></label>
+        </div>
+        <button class="primary" type="submit">${waIcon()} ${esc(t('gAddAndSend'))}</button>
+      </form>
       <section class="panel perms">
         <p class="label">🔐 ${esc(t('permsTitle'))}</p>
         <ul class="perm-list">
           <li><b>${esc(t('roleOwner'))} / ${esc(t('roleAdmin'))}</b><span>${esc(t('permsAdmin'))}</span></li>
           <li><b>${esc(t('roleMember'))}</b><span>${esc(t('permsMember'))}</span></li>
         </ul>
-        <p class="muted small-text">${esc(isOwner() ? t('permsOwnerHint') : isAdmin() ? t('permsYouAdmin') : t('permsYouMember'))}</p>
-      </section>
-      <section>
-        <div class="section-head"><h2>${esc(t('membersN', { n: keys.length }))}</h2></div>
-        <ul class="people">${keys.map(k => `<li class="person">
-          <span class="avatar sm${ppl[k].guest ? ' ghosted' : ''}">${esc(initial(ppl[k].name))}</span>
-          <span class="p-main"><strong>${esc(ppl[k].name)}${k === me() ? ` <small class="muted">(${esc(t('you'))})</small>` : ''}</strong>${isAdmin() ? `<small class="muted tnum" dir="ltr">${esc(ppl[k].phone || '')}</small>` : ''}</span>
-          <span class="p-side">${k === g.ownerId ? `<span class="chip chip-ordered">${esc(t('roleOwner'))}</span>` : (g.adminIds || []).includes(k) ? `<span class="chip chip-open">${esc(t('roleAdmin'))}</span>` : ''}${ppl[k].guest ? `<span class="chip chip-out">${esc(t('guest'))}</span>` : ''}
-          ${isAdmin() && ppl[k].guest ? `<button class="icon-btn" data-act="delGuest" data-key="${esc(k)}" aria-label="${esc(t('delete'))}">×</button>` : ''}
-</span>
-        </li>`).join('')}</ul>
-      </section>
-      ${isAdmin() ? `<form class="panel form" data-submit="addGuest" novalidate>
-        <p class="label">${esc(t('addGuest'))}</p>
-        <p class="muted small-text">${esc(t('addGuestHint'))}</p>
-        <div class="grid2">
-          <label class="field"><span>${esc(t('personName'))}</span><input id="gu-name" name="name"></label>
-          <label class="field"><span>${esc(t('personPhoneOpt'))}</span><input id="gu-phone" name="phone" type="tel" dir="ltr"></label>
-        </div>
-        <button class="secondary" type="submit">${plusIcon()} ${esc(t('add'))}</button>
-      </form>
-      <form class="panel form" data-submit="renameGroup" novalidate>
-        <label class="field"><span>${esc(t('groupName'))}</span><input id="g-rename" name="name" value="${esc(g.name)}"></label>
-        <button class="secondary" type="submit">${esc(t('save'))}</button>
-      </form>` : ''}
+      </section>` : ''}
       ${S.groups.length > 1 ? `<section class="panel"><p class="label">${esc(t('myGroups'))}</p>${S.groups.map(x => `<button class="row-link${x.id === S.gid ? ' on' : ''}" data-act="switchGroup" data-id="${esc(x.id)}"><span><strong>${esc(x.name)}</strong></span><span class="chev">›</span></button>`).join('')}</section>` : ''}
       ${isSiteAdmin() ? `<details class="panel"><summary>${esc(t('newGroup'))}</summary>
         <form class="form" data-submit="createGroup" novalidate>
           <label class="field"><span>${esc(t('groupName'))}</span><input id="g-new" name="name"></label>
           <button class="secondary" type="submit">${esc(t('createGroup'))}</button>
         </form></details>` : ''}`;
+  }
+
+  /* ---------- daily schedule: the group's order opens and closes by itself ---------- */
+  const DAYS = [0, 1, 2, 3, 4, 5, 6];   // 0 = Sunday, like Date.getDay()
+  const dayName = d => t('day' + d);
+  function scheduleText(s) {
+    const days = (s.days || []).slice().sort((a, b) => ((a + 1) % 7) - ((b + 1) % 7));   // week starts Saturday
+    const r = s.restaurant && s.restaurant !== 'last' ? (S.restaurants.find(x => x.id === s.restaurant) || {}).name : t('schLastRest');
+    return t('schSummary', { days: days.length === 7 ? t('schEveryDay') : days.map(dayName).join(comma()), from: hm12(s.from), to: hm12(s.to), r: r || '?' });
+  }
+  function hm12(hm) {
+    const [h, m] = String(hm || '0:0').split(':').map(Number);
+    const d = new Date(); d.setHours(h || 0, m || 0, 0, 0);
+    return fmtTime(d.getTime());
+  }
+  function scheduleView(g) {
+    const s = Object.assign({ on: false, days: [0, 1, 2, 3, 4], from: '09:00', to: '10:30', restaurant: 'last' }, g.schedule || {});
+    const open = S.schOpen;
+    const rests = S.restaurants.slice().sort((a, b) => a.name.localeCompare(b.name));
+    return `<section class="panel schedule${s.on ? ' on' : ''}">
+      <div class="bc-head"><p class="label">⏰ ${esc(t('schTitle'))}</p>
+        <label class="switch"><input type="checkbox" data-change="schOn"${s.on ? ' checked' : ''}><span>${esc(s.on ? t('schOnLbl') : t('schOffLbl'))}</span></label></div>
+      <p class="muted small-text">${esc(s.on ? scheduleText(s) : t('schHint'))}</p>
+      ${s.on && s.lastRun === todayKey() ? `<p class="small-text pc-ok">✓ ${esc(t('schRanToday'))}</p>` : ''}
+      ${open || !g.schedule ? `<form class="form sch-form" data-submit="schSave" novalidate>
+        <div class="sch-days" role="group" aria-label="${esc(t('schDays'))}">${[6, 0, 1, 2, 3, 4, 5].map(d => `<label class="day-chip"><input type="checkbox" name="d${d}"${(s.days || []).includes(d) ? ' checked' : ''}><span>${esc(dayName(d))}</span></label>`).join('')}</div>
+        <div class="grid2">
+          <label class="field"><span>${esc(t('schFrom'))}</span><input type="time" name="from" value="${esc(s.from)}" required></label>
+          <label class="field"><span>${esc(t('schTo'))}</span><input type="time" name="to" value="${esc(s.to)}" required></label>
+        </div>
+        <label class="field"><span>${esc(t('schRest'))}</span><select name="restaurant">
+          <option value="last"${s.restaurant === 'last' ? ' selected' : ''}>${esc(t('schLastRest'))}</option>
+          ${rests.map(r => `<option value="${esc(r.id)}"${s.restaurant === r.id ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}
+        </select></label>
+        <p class="muted small-text">${esc(t('schNote'))}</p>
+        <p class="err" id="sch-err" hidden></p>
+        <div class="btn-row"><button class="primary" type="submit">${esc(t('schSaveBtn'))}</button>${g.schedule ? `<button class="ghost" type="button" data-act="schToggle">${esc(t('cancel'))}</button>` : ''}</div>
+      </form>` : `<button class="ghost small" data-act="schToggle">✎ ${esc(t('schEdit'))}</button>`}
+    </section>`;
+  }
+  function todayKey() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  // the admin's host settings that a scheduled order is opened with (the database opens it, so it needs them saved)
+  function scheduleBase() {
+    const b = newCartBase(0, '');
+    for (const k of ['createdAt', 'closesAt', 'title', 'candidates', 'candidateInfo', 'votes', 'members', 'payments', 'charges']) delete b[k];
+    return b;
+  }
+  // demo mode has no server: the app opens the scheduled order itself while it is running
+  function runScheduleLocal() {
+    if (!isLocal() || !S.group || !S.gid) return;
+    const s = S.group.schedule; if (!s || !s.on) return;
+    const now = new Date(), tk = todayKey();
+    if (s.lastRun === tk || !(s.days || []).includes(now.getDay())) return;
+    const mins = hm => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
+    const cur = now.getHours() * 60 + now.getMinutes();
+    if (cur < mins(s.from) || cur >= mins(s.to)) return;
+    const done = () => S.store.patchGroup(S.gid, { 'schedule.lastRun': tk });
+    if (S.carts.some(c => !c.solo && c.createdAt >= startOfDay(Date.now()))) return done();
+    let rid0 = s.restaurant !== 'last' ? s.restaurant : null;
+    if (!rid0) { const last = S.carts.filter(c => !c.solo && c.restaurantId).sort((a, b) => b.createdAt - a.createdAt)[0]; rid0 = last && last.restaurantId; }
+    const r = S.restaurants.find(x => x.id === rid0); if (!r) return;
+    const close = new Date(); const [h, m] = s.to.split(':').map(Number); close.setHours(h, m, 0, 0);
+    done();
+    S.store.createCart(S.gid, Object.assign({}, s.base || scheduleBase(), { title: '', createdAt: Date.now(), closesAt: close.getTime(), candidates: [], candidateInfo: {}, votes: {}, members: {}, payments: {}, charges: [], scheduled: true }, snapshotOf(r), { stage: 'ordering' }));
   }
 
   /* ---------- places: delivery point + distance ---------- */
@@ -2033,9 +2180,10 @@
       const link = groupLink(g.id);
       const members = (g.memberUids || []);
       return `<section class="panel">
-        <div class="bc-head"><strong>${esc(g.name)}</strong>${g.id === S.gid ? `<span class="chip chip-open">${esc(t('admCurrent'))}</span>` : `<button class="ghost small" data-act="admGroup" data-id="${esc(g.id)}">${esc(t('admOpenGroup'))}</button>`}</div>
+        <div class="bc-head"><strong>${esc(g.name)}</strong><span class="btn-row tight">${g.id === S.gid ? `<span class="chip chip-open">${esc(t('admCurrent'))}</span>` : `<button class="ghost small" data-act="admGroup" data-id="${esc(g.id)}">${esc(t('admOpenGroup'))}</button>`}<button class="secondary small" data-act="admManageGroup" data-id="${esc(g.id)}">✎ ${esc(t('gManage'))}</button></span></div>
         <small class="muted">${esc(t('admGroupStats', { m: members.length, r: g.restaurants, o: g.carts }))}${g.lastOrder ? ' · ' + esc(t('lastOrdered')) + ': ' + esc(fmtAgo(g.lastOrder)) : ''}</small>
-        <div class="share-row"><code class="link" dir="ltr">${esc(link)}</code>
+        <div class="share-row"><a class="link" dir="ltr" href="${esc(link)}">${esc(link)}</a>
+          <a class="secondary small btn-link" href="${esc(link)}">↗ ${esc(t('openLink'))}</a>
           <button class="secondary small" data-act="copy" data-text="${esc(link)}">${esc(t('copyLink'))}</button>
           ${wa(waLink('', t('msgGroupInvite', { name: g.name, link })), t('shareWa'))}</div>
         <p class="muted small-text">${esc(members.map(u => nm(g, u)).join(comma()))}</p>
@@ -2203,7 +2351,9 @@
     const states = S.carts.map(stageOf).join(',');
     if (lastStates && states !== lastStates) scheduleRender();
     lastStates = states;
+    if (Date.now() - lastSch > 5000) { lastSch = Date.now(); try { runScheduleLocal(); } catch (e) { console.warn(e); } }
   }
+  let lastSch = 0;
   setInterval(tick, 1000);
 
   /* ---------- actions ---------- */
@@ -2391,6 +2541,7 @@
       toast(t('saved')); loadAdmin();
     },
     admGroup: el => { setGroup(el.dataset.id, true); render(true); },
+    admManageGroup: el => { setGroup(el.dataset.id, true); go('group'); },
     admNewOrder: () => { S.sel = []; go('newOrder'); },
     admNewRest: () => actions.newRestaurant(),
     nav: el => {
@@ -2521,20 +2672,28 @@
       if (m.status === 'out') { m.items = []; m.done = true; } else { m.done = false; }
       saveMember(c, key, m);
     },
+    repeatSkip: el => { LS.set(el.dataset.k, 1); render(true); },
+    debtChoice: el => {
+      const c = curCart(), key = actKey(c), m = memberFor(c, key);
+      if (el.dataset.v) m.carry = el.dataset.v; else delete m.carry;
+      saveMember(c, key, m);
+    },
     repeatLast: el => {
-      const c = curCart(), key = actKey(c), last = cartById(el.dataset.id);
-      if (!last) return;
+      const c = curCart(), key = actKey(c);
+      const last = lastOrderOf(c, key);
+      if (!last || last.id !== el.dataset.id) return;
       const m = memberFor(c, key);
       const menuByName = {};
-      for (const mi of c.menu || []) menuByName[mi.name] = mi;
-      m.items = (last.members[key].items || []).map(it => {
-        const mi = menuByName[it.name];
+      for (const mi of c.menu || []) menuByName[C.normName(mi.name)] = mi;
+      m.items = last.items.filter(it => it.custom || menuByName[C.normName(it.name)]).map(it => {
+        const mi = menuByName[C.normName(it.name)];
         const extra = C.optDelta(it);
-        const o = { id: rid(8), menuId: mi ? mi.id : it.menuId, name: it.name, price: mi ? C.round2(C.num(mi.price) + extra) : it.price, qty: it.qty, note: it.note || '' };
+        const o = { id: rid(8), menuId: mi ? mi.id : it.menuId, name: mi ? mi.name : it.name, custom: !mi && !!it.custom || undefined, price: mi ? C.round2(C.num(mi.price) + extra) : it.price, qty: it.qty, note: it.note || '' };
         if ((it.opts || []).length) { o.opts = clone(it.opts); o.optDelta = extra; o.base = mi ? mi.price : C.round2(C.num(it.price) - extra); }
         return o;
       });
-      m.status = 'in'; m.done = false;
+      m.status = 'in'; m.done = !!el.dataset.done;
+      if (m.done) toast(t('rpDoneToast'));
       saveMember(c, key, m);
     },
     addMenu: el => {
@@ -2731,6 +2890,18 @@
     },
 
     /* group */
+    gEdit: el => { S.gEdit = el.dataset.key && S.gEdit !== el.dataset.key ? el.dataset.key : null; S.confirmKey = null; render(true); },
+    gRename: () => { S.gRename = !S.gRename; render(true); if (S.gRename) setTimeout(() => { const i = $('#g-rename'); if (i) { i.focus(); i.select(); } }, 30); },
+    gRemove: async el => {
+      const k = el.dataset.key, rk = 'gRm_' + k;
+      if (S.confirmKey !== rk) { S.confirmKey = rk; return render(true); }
+      S.confirmKey = null;
+      const p = people(null)[k] || {};
+      const ok = p.guest || isLocal() ? await guardOk(S.store.patchGroup(S.gid, { ['roster.' + k]: undefined, ...(isLocal() ? { memberUids: (S.group.memberUids || []).filter(x => x !== k) } : {}) }))
+        : await guardOk(S.store.adminRemoveMember(S.gid, k));
+      if (ok) { S.gEdit = null; toast(t('gRemoved', { name: p.name || '' })); }
+    },
+    schToggle: () => { S.schOpen = !S.schOpen; render(true); },
     delGuest: el => guard(S.store.patchGroup(S.gid, { ['roster.' + el.dataset.key]: undefined })),
     toggleAdmin: el => {
       const ids = new Set(S.group.adminIds || []);
@@ -3840,6 +4011,11 @@
   function setLang(l) { S.lang = l === 'en' ? 'en' : 'ar'; LS.set('tarweeqa.lang', S.lang); render(true); }
 
   const changes = {
+    schOn: async el => {
+      const on = el.checked;
+      if (on && !(S.group.schedule && (S.group.schedule.days || []).length)) { S.schOpen = true; el.checked = false; render(true); return; }
+      if (await guardOk(S.store.patchGroup(S.gid, { 'schedule.on': on, 'schedule.base': scheduleBase() }))) toast(on ? t('schTurnedOn') : t('schTurnedOff'));
+    },
     pickGroup: el => { if (el.value && el.value !== S.gid) { S.sel = []; setGroup(el.value, true); go('newOrder'); } },
     acting: el => {
       S.store.setActing(el.value);
@@ -4107,7 +4283,38 @@
       const gid = await guard(S.store.createGroup({ name, ownerId: uid, adminIds: [uid], memberUids: [uid], roster: { [uid]: { name: S.profile.name, phone: S.profile.phone, joinedAt: Date.now() } }, createdAt: Date.now() }));
       if (gid) { const fromAdmin = S.route.name === 'admin'; setGroup(gid, true); if (fromAdmin) { S.adm.tab = 'groups'; go('admin'); } else go('group'); }
     },
-    renameGroup: form => { const n = form.name.value.trim(); if (n) guard(S.store.patchGroup(S.gid, { name: n })).then(() => toast(t('saved'))); },
+    renameGroup: async form => {
+      const n = form.name.value.trim(); if (!n) return toast(t('errGroupName'), 'warn');
+      if (await guardOk(S.store.patchGroup(S.gid, { name: n }))) { S.gRename = false; toast(t('saved')); render(true); }
+    },
+    gMember: async form => {
+      const k = form.dataset.key, p = people(null)[k]; if (!p) return;
+      const name = form.name.value.trim(); if (!name) return toast(t('errName'), 'warn');
+      const patchR = { ['roster.' + k + '.name']: name };
+      if (form.phone) {
+        const phone = form.phone.value.trim();
+        if (phone && !C.isValidPhone(phone)) return toast(t('errPhone'), 'warn');
+        patchR['roster.' + k + '.phone'] = phone;
+      }
+      if (!(await guardOk(S.store.patchGroup(S.gid, patchR)))) return;
+      // a real account: the name follows the person everywhere (only the site admin can do that)
+      if (!p.guest && isSiteAdmin() && name !== p.name && S.store.adminRenamePerson) await guardOk(S.store.adminRenamePerson(k, name));
+      S.gEdit = null; toast(t('saved')); render(true);
+    },
+    schSave: async form => {
+      const days = DAYS.filter(d => form['d' + d] && form['d' + d].checked);
+      const from = form.from.value, to = form.to.value, err = $('#sch-err');
+      const bad = m => { err.textContent = m; err.hidden = false; };
+      if (!days.length) return bad(t('schErrDays'));
+      if (!from || !to || to <= from) return bad(t('schErrTime'));
+      const restaurant = form.restaurant.value || 'last';
+      if (restaurant === 'last' && !S.carts.some(c => !c.solo && c.restaurantId)) return bad(t('schErrNoLast'));
+      const sch = Object.assign({}, S.group.schedule || {}, { on: true, days, from, to, restaurant, base: scheduleBase(), savedAt: Date.now() });
+      // a changed time today may open today's order again, unless one exists already
+      if (S.group.schedule && (S.group.schedule.from !== from || S.group.schedule.to !== to)) delete sch.lastRun;
+      if (!(await guardOk(S.store.patchGroup(S.gid, { schedule: sch })))) return;
+      S.schOpen = false; toast(t('schSaved')); render(true);
+    },
     cartPerson: form => {
       const c = curCart(); if (!c) return;
       const name = form.name.value.trim(), phone = form.phone.value.trim();
@@ -4127,8 +4334,13 @@
       const name = form.name.value.trim(), phone = form.phone.value.trim();
       if (!name) return toast(t('errName'), 'warn');
       if (phone && !C.isValidPhone(phone)) return toast(t('errPhone'), 'warn');
-      guard(S.store.patchGroup(S.gid, { ['roster.g_' + rid(8)]: { name, phone, guest: true, joinedAt: Date.now() } }));
-      form.reset(); toast(t('saved'));
+      const ppl = people(null);
+      if (phone && Object.values(ppl).some(p => p.phone && C.waPhone(p.phone) === C.waPhone(phone))) return toast(t('gPhoneTaken'), 'warn');
+      // WhatsApp opens right away, on this person's chat, with the group link ready to send (opened inside the tap, so phones allow it)
+      const msg = t('msgGroupInviteTo', { name, g: S.group.name, link: groupLink(S.gid) });
+      if (phone) { const w = window.open(waLink(phone, msg), '_blank', 'noopener'); if (!w) location.href = waLink(phone, msg); }
+      guard(S.store.patchGroup(S.gid, { ['roster.g_' + rid(8)]: { name, phone, guest: true, joinedAt: Date.now(), invitedAt: phone ? Date.now() : null } }));
+      form.reset(); toast(phone ? t('gAddedSent', { name }) : t('gAdded', { name }));
     },
     ogNew: form => {
       syncDraft();
