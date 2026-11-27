@@ -226,7 +226,7 @@
       home: viewHome, newOrder: viewNewOrder, cart: viewCart, restaurants: viewRestaurants,
       restaurant: viewRestaurantEdit, money: viewMoney, group: viewGroup, profile: viewProfile, admin: viewAdmin
     }[r] || viewHome)();
-    return shell(body) + receiptModal();
+    return shell(body) + receiptModal() + optSheet();
   }
 
   // section chips follow the scroll: the section at the top of the screen is the highlighted chip
@@ -815,7 +815,7 @@
     for (const it of items) if (it.menuId) qtyById[it.menuId] = (qtyById[it.menuId] || 0) + C.num(it.qty);
 
     const myList = items.length ? `<ul class="my-items">${items.map(it => `<li>
-        <div class="mi-top"><span class="mi-name">${esc(it.name)}${it.custom ? ` <small class="tag">${esc(t('notOnMenu'))}</small>` : ''}</span><span class="mi-price tnum">${it.noPrice ? esc(t('priceLater')) : esc(money(C.num(it.price) * C.num(it.qty)))}</span></div>
+        <div class="mi-top"><span class="mi-name">${esc(it.name)}${it.custom ? ` <small class="tag">${esc(t('notOnMenu'))}</small>` : ''}${(it.opts || []).length ? `<small class="mi-opts">${esc(C.optText(it))}${C.optDelta(it) ? ' · +' + esc(C.fmtMoney(C.optDelta(it))) : ''}</small>` : ''}</span><span class="mi-price tnum">${it.noPrice ? esc(t('priceLater')) : esc(money(C.num(it.price) * C.num(it.qty)))}</span></div>
         <div class="mi-ctrl">
           ${canEdit ? `<div class="stepper">
             <button data-act="qty" data-id="${esc(it.id)}" data-d="-1" aria-label="-">−</button>
@@ -845,17 +845,20 @@
           <ul class="dishes">${g.items.map(it => {
             const n = qtyById[it.id] || 0;
             const mine = n ? items.filter(x => x.menuId === it.id).pop() : null;
+            const og = C.groupsFor(it, c.optGroups);
+            const add = og.length ? 'pickOpts' : 'addMenu';
             return `<li class="menu-item dish${n ? ' in' : ''}" data-name="${esc(it.name.toLowerCase())}"${q && !it.name.toLowerCase().includes(q) ? ' hidden' : ''}>
-              <button class="dish-main" data-act="addMenu" data-id="${esc(it.id)}" aria-label="${esc(t('addOne', { name: it.name }))}">
+              <button class="dish-main" data-act="${add}" data-id="${esc(it.id)}" aria-label="${esc(t('addOne', { name: it.name }))}">
                 <strong class="dish-name">${esc(it.name)}</strong>
+                ${og.length ? `<small class="dish-opts">${esc(og.map(g => g.name).join(' · '))}</small>` : ''}
                 <span class="dish-price tnum">${esc(money(it.price))}</span>
               </button>
               ${n && mine ? `<div class="dish-step" role="group">
                   <button data-act="qty" data-id="${esc(mine.id)}" data-d="-1" aria-label="−">−</button>
                   <b class="tnum">${n}</b>
-                  <button data-act="addMenu" data-id="${esc(it.id)}" aria-label="+">+</button>
+                  <button data-act="${add}" data-id="${esc(it.id)}" aria-label="+">+</button>
                 </div>`
-                : `<button class="dish-add" data-act="addMenu" data-id="${esc(it.id)}" aria-label="${esc(t('addOne', { name: it.name }))}">${plusIcon()}</button>`}
+                : `<button class="dish-add" data-act="${add}" data-id="${esc(it.id)}" aria-label="${esc(t('addOne', { name: it.name }))}">${plusIcon()}</button>`}
             </li>`;
           }).join('')}</ul></div>`).join('')}
         <p class="empty small" id="no-match" hidden>${esc(t('noMatch'))}</p>
@@ -996,7 +999,7 @@
           <small class="muted tnum">${cnt ? cnt + ' · ' + esc(money(C.memberSubtotal(exp[k] || m))) : '—'}</small>
 </span>
         <span class="p-side">${personChip(s)}${actions}</span>
-          ${its.length ? `<ul class="p-items">${its.map(it => `<li><span>${it.shared ? '🤝 ' : ''}${C.num(it.qty) > 1 || !it.shared ? `<b class="tnum">${esc(String(it.qty))}×</b> ` : ''}${esc(it.name)}${it.note ? ` <em>(${esc(it.note)})</em>` : ''}${it.shared ? ` <small class="muted">÷${it.sharedN}</small>` : ''}</span><span class="tnum">${it.price ? esc(C.fmtMoney(C.round2(C.num(it.price) * C.num(it.qty)))) : '?'}</span></li>`).join('')}</ul>` : ''}
+          ${its.length ? `<ul class="p-items">${its.map(it => `<li><span>${it.shared ? '🤝 ' : ''}${C.num(it.qty) > 1 || !it.shared ? `<b class="tnum">${esc(String(it.qty))}×</b> ` : ''}${esc(it.name)}${C.itemNote(it) ? ` <em>(${esc(C.itemNote(it))})</em>` : ''}${it.shared ? ` <small class="muted">÷${it.sharedN}</small>` : ''}</span><span class="tnum">${it.price ? esc(C.fmtMoney(C.round2(C.num(it.price) * C.num(it.qty)))) : '?'}</span></li>`).join('')}</ul>` : ''}
       </li>`;
     }).join('');
 
@@ -1035,8 +1038,9 @@
   function orderText(c, agg) {
     const lines = [t('msgOrderHead', { rest: c.restaurant.name }), fmtDate(Date.now()) + ' ' + fmtTime(Date.now()), ''];
     for (const l of agg.lines) {
-      lines.push(`${l.qty} × ${l.name} — ${C.fmtMoney(l.total)}`);
-      if (l.note) lines.push(`   ${t('msgNote')}: ${l.note}`);
+      lines.push(`${l.qty} × ${l.name}${l.opt ? ' (' + l.opt + ')' : ''} — ${C.fmtMoney(l.total)}`);
+      const nt = l.opt ? l.userNote : l.note;
+      if (nt) lines.push(`   ${t('msgNote')}: ${nt}`);
     }
     lines.push('—————', `${t('pieces')}: ${agg.pieces}`, `${t('foodTotal')}: ${money(agg.total)}`);
     return lines.join('\n');
@@ -1555,6 +1559,10 @@
         <label class="field"><span>${esc(t('price'))}</span><input class="ei-price tnum" id="ei-p-${esc(it.id)}" data-change="itemPrice" data-id="${esc(it.id)}" inputmode="decimal" value="${esc(it.price)}"></label>
         <label class="field"><span>${esc(t('category'))}</span>${catSelect(cats, it.category, `data-change="itemCat" data-id="${esc(it.id)}"`)}</label>
       </div>
+      <div class="ei-og"><span class="label">${esc(t('ogForItem'))}</span>
+        ${(d.optGroups || []).length ? `<div class="og-flags">${d.optGroups.map(g => `<label class="chk-line"><input type="checkbox" data-change="itemOg" data-id="${esc(it.id)}" value="${esc(g.id)}"${(it.og || []).includes(g.id) ? ' checked' : ''}> ${esc(g.name || t('ogUnnamed'))}</label>`).join('')}</div>`
+          : `<small class="muted">${esc(t('ogNoneYet'))}</small>`}
+      </div>
       <div class="btn-row">
         <button class="primary small" data-act="editItemDone">✓ ${esc(t('done'))}</button>
         <button class="danger-ghost small" data-act="draftDelItem" data-id="${esc(it.id)}">${esc(t('delete'))}</button>
@@ -1563,7 +1571,7 @@
     const on = S.pickMode && S.picked.has(it.id);
     return `<li class="ed-row${it.fresh ? ' fresh' : ''}${on ? ' picked' : ''}" data-item="${esc(it.id)}"><button class="ed-sum" data-act="${S.pickMode ? 'pickItem' : 'editItem'}" data-id="${esc(it.id)}"${S.pickMode ? ` aria-pressed="${on}"` : ''}>
       ${S.pickMode ? `<span class="ed-tick" aria-hidden="true">${on ? '✓' : ''}</span>` : ''}
-      <span class="ed-name">${esc(it.name)}${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : moveTag(d.name, it.name, C.num(it.price), true)}</span>
+      <span class="ed-name">${esc(it.name)}${ogTags(it, d)}${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : moveTag(d.name, it.name, C.num(it.price), true)}</span>
       <span class="ed-price tnum">${esc(C.fmtMoney(it.price))}</span>${S.pickMode ? '' : '<span class="ed-pen" aria-hidden="true">✎</span>'}
     </button></li>`;
   }
@@ -1589,9 +1597,49 @@
       <span class="tnum pb-n">${esc(t('pickedN', { n }))}</span>
       ${catSelect(cats, '__none', `id="pick-cat" data-change="pickCat" aria-label="${esc(t('moveTo'))}"`).replace('<select', `<select${n ? '' : ' disabled'}`).replace('>', `><option value="__none" selected disabled>${esc(t('moveTo'))}</option>`)}
       <button class="primary small" data-act="pickMove"${n ? '' : ' disabled'}>${esc(t('moveBtn'))}</button>
+      ${(S.draft.optGroups || []).length ? `<select id="pick-og" data-change="pickOg"${n ? '' : ' disabled'} aria-label="${esc(t('ogLinkTo'))}"><option value="" selected disabled>${esc(t('ogLinkTo'))}</option>${S.draft.optGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name || t('ogUnnamed'))}</option>`).join('')}</select>` : ''}
       <button class="ghost small" data-act="pickDelete"${n ? '' : ' disabled'}>${esc(S.confirmKey === 'pickDel' ? t('confirmAgain') : '🗑')}</button>
       <button class="ghost small" data-act="pickDone">${esc(t('cancel'))}</button>
     </div>`;
+  }
+  function draftOg(id) { return ((S.draft && S.draft.optGroups) || []).find(g => g.id === id); }
+  function ogTags(it, d) {
+    const gs = C.groupsFor(it, d.optGroups);
+    return gs.length ? `<small class="og-tags">${gs.map(g => esc(g.name)).join(' · ')}</small>` : '';
+  }
+  function optGroupsPanel(d) {
+    const gs = d.optGroups || [];
+    const used = id => d.items.filter(i => (i.og || []).includes(id)).length;
+    return `<section class="panel form og-panel" id="og-panel">
+      <p class="label">${esc(t('ogTitle'))}</p>
+      <p class="muted small-text">${esc(t('ogHint'))}</p>
+      ${gs.map(g => `<details class="og-ed"${S.ogOpen === g.id ? ' open' : ''}>
+        <summary><span class="og-sum"><b>${esc(g.name || t('ogUnnamed'))}</b><small class="muted">${esc(g.choices.filter(c => c.name).map(c => c.name + (C.num(c.price) ? ' +' + C.fmtMoney(c.price) : '')).join(' · '))}</small></span>
+          <small class="tag">${esc(t('ogUsedN', { n: used(g.id) }))}</small></summary>
+        <label class="field"><span>${esc(t('ogName'))}</span><input data-og="${esc(g.id)}" data-f="name" value="${esc(g.name)}"></label>
+        <div class="og-flags">
+          <label class="chk-line"><input type="checkbox" data-change="ogFlag" data-g="${esc(g.id)}" data-f="required"${g.required ? ' checked' : ''}> ${esc(t('ogRequired'))}</label>
+          <label class="chk-line"><input type="checkbox" data-change="ogFlag" data-g="${esc(g.id)}" data-f="multi"${g.multi ? ' checked' : ''}> ${esc(t('ogMulti'))}</label>
+          ${g.multi ? `<label class="chk-line">${esc(t('ogMax'))} <input class="tnum og-max" inputmode="numeric" data-og="${esc(g.id)}" data-f="max" value="${g.max ? esc(g.max) : ''}" placeholder="—"></label>` : ''}
+        </div>
+        <ul class="og-choices">${g.choices.map(ch => `<li>
+          <input data-og="${esc(g.id)}" data-c="${esc(ch.id)}" data-f="name" value="${esc(ch.name)}" placeholder="${esc(t('ogChoice'))}" aria-label="${esc(t('ogChoice'))}">
+          <input class="tnum og-price" inputmode="decimal" data-og="${esc(g.id)}" data-c="${esc(ch.id)}" data-f="price" value="${C.num(ch.price) ? esc(ch.price) : ''}" placeholder="+0" aria-label="${esc(t('ogExtra'))}">
+          <button class="ghost small" data-act="ogDelChoice" data-g="${esc(g.id)}" data-c="${esc(ch.id)}" aria-label="${esc(t('delete'))}">×</button></li>`).join('')}</ul>
+        <div class="btn-row tight">
+          <button class="secondary small" data-act="ogAddChoice" data-g="${esc(g.id)}">${plusIcon()} ${esc(t('ogAddChoice'))}</button>
+          <button class="danger-ghost small" data-act="ogDel" data-g="${esc(g.id)}">${esc(S.confirmKey === 'ogDel' + g.id ? t('confirmAgain') : t('ogDelete'))}</button>
+        </div>
+      </details>`).join('')}
+      <form class="og-new" data-submit="ogNew" novalidate>
+        <div class="grid2">
+          <label class="field"><span>${esc(t('ogName'))}</span><input id="og-new-name" name="name" placeholder="${esc(t('ogNamePh'))}"></label>
+          <label class="field"><span>${esc(t('ogChoices'))}</span><input id="og-new-choices" name="choices" placeholder="${esc(t('ogChoicesPh'))}"></label>
+        </div>
+        <small class="muted">${esc(t('ogChoicesHint'))}</small>
+        <button class="secondary" type="submit">${plusIcon()} ${esc(t('ogAdd'))}</button>
+      </form>
+    </section>`;
   }
   function viewRestaurantEdit() {
     const d = S.draft;
@@ -1663,6 +1711,7 @@
         <p class="muted small-text" id="parse-result" hidden></p>
       </details>
 
+      ${optGroupsPanel(d)}
       <section>
         <div class="section-head"><h2>${esc(t('menu'))} <small class="muted">${esc(t('itemsCount', { n: d.items.length }))}</small></h2>
           ${d.items.length && S.history[d.name] ? movesSummary(d) : ''}
@@ -2059,7 +2108,8 @@
     return {
       restaurantId: r.id,
       restaurant: { name: r.name, phone: r.phone || '', talabatUrl: r.talabatUrl || '', logo: r.logo || '' },
-      menu: (r.items || []).map(i => ({ id: i.id, name: i.name, price: i.price, category: i.category || '' })),
+      menu: (r.items || []).map(i => { const o = { id: i.id, name: i.name, price: i.price, category: i.category || '' }; const og = C.groupsFor(i, r.optGroups).map(g => g.id); if (og.length) o.og = og; return o; }),
+      optGroups: clone((r.optGroups || []).filter(g => (g.choices || []).length && (r.items || []).some(i => (i.og || []).includes(g.id)))),
       estimate: Object.assign({ delivery: 0, service: 0, taxPct: 0, tip: 0 }, r.fees || {})
     };
   }
@@ -2073,6 +2123,47 @@
   }
 
   const actions = {
+    /* item options */
+    pickOpts: el => {
+      const c = curCart(); if (!c) return;
+      const mi = (c.menu || []).find(x => x.id === el.dataset.id); if (!mi) return;
+      const sel = {};
+      for (const g of C.groupsFor(mi, c.optGroups)) if (g.required && !g.multi && g.choices.length === 1) sel[g.id] = [g.choices[0].id];
+      S.optSheet = { cid: c.id, key: actKey(c), menuId: mi.id, sel, note: '', err: false };
+      render(true);
+    },
+    optClose: () => { S.optSheet = null; render(true); },
+    optAdd: () => {
+      const O = S.optSheet, c = curCart(); if (!O || !c) return;
+      O.note = (($('#os-note') || {}).value || '').trim();
+      const mi = (c.menu || []).find(x => x.id === O.menuId); if (!mi) { S.optSheet = null; return render(true); }
+      const pk = C.pickOptions(C.groupsFor(mi, c.optGroups), O.sel);
+      if (pk.missing.length || pk.over.length) { O.err = true; return render(true); }
+      const m = memberFor(c, O.key), k = C.optKey({ opts: pk.opts });
+      const ex = m.items.find(i => i.menuId === mi.id && C.optKey(i) === k && (i.note || '') === O.note);
+      if (ex) ex.qty = C.num(ex.qty) + 1;
+      else {
+        const it = { id: rid(8), menuId: mi.id, name: mi.name, price: C.round2(C.num(mi.price) + pk.delta), qty: 1, note: O.note };
+        if (pk.opts.length) { it.opts = pk.opts; it.optDelta = pk.delta; it.base = mi.price; }
+        m.items.push(it);
+      }
+      m.status = 'in'; m.done = false;
+      S.optSheet = null;
+      saveMember(c, O.key, m);
+      render(true);
+      toast(t('optAdded', { name: mi.name + (pk.opts.length ? ' (' + C.optText({ opts: pk.opts }) + ')' : '') }));
+    },
+    /* option groups (admin, restaurant editor) */
+    ogAddChoice: el => { syncDraft(); const g = draftOg(el.dataset.g); if (!g) return; g.choices.push({ id: rid(6), name: '', price: 0 }); S.ogOpen = g.id; render(true); const ins = document.querySelectorAll(`[data-og="${CSS.escape(g.id)}"][data-c][data-f="name"]`); if (ins.length) ins[ins.length - 1].focus(); },
+    ogDelChoice: el => { syncDraft(); const g = draftOg(el.dataset.g); if (!g) return; g.choices = g.choices.filter(c => c.id !== el.dataset.c); S.ogOpen = g.id; render(true); },
+    ogDel: el => {
+      const id = el.dataset.g;
+      if (S.confirmKey !== 'ogDel' + id) { syncDraft(); S.confirmKey = 'ogDel' + id; S.ogOpen = id; return render(true); }
+      syncDraft(); S.confirmKey = null;
+      S.draft.optGroups = (S.draft.optGroups || []).filter(g => g.id !== id);
+      for (const it of S.draft.items) if (it.og) { it.og = it.og.filter(x => x !== id); if (!it.og.length) delete it.og; }
+      render(true);
+    },
     pinEye: el => {
       const f = document.getElementById(el.dataset.for); if (!f) return;
       const show = f.type === 'password';
@@ -2250,7 +2341,9 @@
       if (!d.name.trim()) return toast(t('errRestName'), 'warn');
       if (PL.available() && !d.id && !d.place) return toast(t('placeNeed'), 'warn');
       if (d.deliveryKm !== undefined) { const km = C.round2(C.num(d.deliveryKm)); if (km > 0) d.deliveryKm = km; else delete d.deliveryKm; }
-      d.items = d.items.map(({ fresh, oldPrice, ...it }) => it);
+      d.optGroups = (d.optGroups || []).map(g => Object.assign({}, g, { name: (g.name || '').trim(), choices: (g.choices || []).filter(c => (c.name || '').trim()) })).filter(g => g.name && g.choices.length);
+      const ogIds = new Set(d.optGroups.map(g => g.id));
+      d.items = d.items.map(({ fresh, oldPrice, ...it }) => { if (it.og) { it.og = it.og.filter(x => ogIds.has(x)); if (!it.og.length) delete it.og; } return it; });
       delete d.priceSource;
       const id = await guard(S.store.saveRestaurant(S.gid, d));
       S.ocr = null;
@@ -2292,7 +2385,10 @@
       for (const mi of c.menu || []) menuByName[mi.name] = mi;
       m.items = (last.members[key].items || []).map(it => {
         const mi = menuByName[it.name];
-        return { id: rid(8), menuId: mi ? mi.id : it.menuId, name: it.name, price: mi ? mi.price : it.price, qty: it.qty, note: it.note || '' };
+        const extra = C.optDelta(it);
+        const o = { id: rid(8), menuId: mi ? mi.id : it.menuId, name: it.name, price: mi ? C.round2(C.num(mi.price) + extra) : it.price, qty: it.qty, note: it.note || '' };
+        if ((it.opts || []).length) { o.opts = clone(it.opts); o.optDelta = extra; o.base = mi ? mi.price : C.round2(C.num(it.price) - extra); }
+        return o;
       });
       m.status = 'in'; m.done = false;
       saveMember(c, key, m);
@@ -2301,7 +2397,8 @@
       const c = curCart(), key = actKey(c);
       const mi = (c.menu || []).find(x => x.id === el.dataset.id); if (!mi) return;
       const m = memberFor(c, key);
-      const ex = m.items.find(i => i.menuId === mi.id && !i.note);
+      if (C.groupsFor(mi, c.optGroups).length) return actions.pickOpts(el);
+      const ex = m.items.find(i => i.menuId === mi.id && !i.note && !(i.opts || []).length);
       if (ex) ex.qty = C.num(ex.qty) + 1;
       else m.items.push({ id: rid(8), menuId: mi.id, name: mi.name, price: mi.price, qty: 1, note: '' });
       m.status = 'in'; m.done = false;
@@ -2721,7 +2818,7 @@
   }
 
   /* ---------- receipt for an order: real names and prices, real charges ---------- */
-  function lineKey(it) { return it.name.trim() + '|' + C.num(it.price) + '|' + (it.note || '').trim(); }
+  function lineKey(it) { return it.name.trim() + '|' + C.num(it.price) + '|' + C.itemNote(it); }
   // match our order lines to receipt lines. A receipt line can cover several of our lines up to its quantity
   // (e.g. "4× فول جاد" covers 2× فول جاد + 2× فول بالحمص when the host ordered the nearest thing).
   function autoMatch(c, rc) {
@@ -2859,7 +2956,7 @@
         // the name people chose stays; only the price follows the receipt. The receipt's wording is kept internally.
         it.price = r.unit; it.noPrice = false;
         if (C.normName(r.name) !== C.normName(it.name)) it.receiptName = r.name;
-        pairs.push([it.name, r]);
+        pairs.push([it.name, r, C.optDelta(it)]);
       }
     }
     const shared = clone(c.shared || []);
@@ -3003,7 +3100,10 @@
       done.add(ex); addAlias(ex, line.name);
       if (at >= priceAt(restName, ex)) { if (C.num(ex.price) !== line.unit) { ex.price = line.unit; updated++; } ex.at = at; } else older++;
     };
-    for (const [shown, line] of pairs) { const ex = findItem(items, shown) || findItem(items, line.name); if (ex && rcUsable(line)) touch(ex, line); }
+    for (const [shown, line, extra] of pairs) {
+      const ex = findItem(items, shown) || findItem(items, line.name);
+      if (ex && rcUsable(line)) touch(ex, extra ? Object.assign({}, line, { unit: C.round2(line.unit - extra) }) : line);
+    }
     for (const line of rc.items) {
       if (!rcUsable(line) || pairs.some(p => p[1] === line)) continue;
       const ex = findItem(items, line.name);
@@ -3114,6 +3214,34 @@
     catch (e) { console.warn(e); S.rview = null; toast(t('shotsFail'), 'warn'); }
     render(true);
   }
+  /* ---------- item options: the sheet that opens when a dish has choices (eggs fried / boiled …) ---------- */
+  function optSheet() {
+    const O = S.optSheet; if (!O) return '';
+    const c = curCart();
+    const mi = c && c.id === O.cid && (c.menu || []).find(x => x.id === O.menuId);
+    if (!mi) { S.optSheet = null; return ''; }
+    const groups = C.groupsFor(mi, c.optGroups);
+    const pk = C.pickOptions(groups, O.sel);
+    const price = C.round2(C.num(mi.price) + pk.delta);
+    return `<div class="rmodal osheet" role="dialog" aria-modal="true" aria-label="${esc(mi.name)}"><div class="rmodal-box">
+      <div class="rmodal-head"><b>${esc(mi.name)}</b><small class="muted tnum">${esc(money(mi.price))}</small>
+        <button class="icon-btn" data-act="optClose" aria-label="${esc(t('close'))}">×</button></div>
+      ${groups.map(g => {
+        const ids = O.sel[g.id] || [], multi = !!g.multi, max = multi ? C.num(g.max) : 1;
+        const miss = O.err && (pk.missing.includes(g.name) || pk.over.includes(g.name));
+        const type = !multi && g.required ? 'radio' : 'checkbox';
+        const rule = [g.required ? t('optRequired') : t('optOptional'), multi ? (max ? t('optMaxN', { n: max }) : t('optAny')) : t('optPickOne')].join(' · ');
+        return `<fieldset class="og${miss ? ' miss' : ''}"><legend>${esc(g.name)} <small class="${g.required ? 'req' : 'muted'}">${esc(rule)}</small></legend>
+          ${(g.choices || []).map(ch => `<label class="oc"><input type="${type}" name="og-${esc(g.id)}" data-change="optPick" data-g="${esc(g.id)}" value="${esc(ch.id)}"${ids.includes(ch.id) ? ' checked' : ''}>
+            <span>${esc(ch.name)}</span>${C.num(ch.price) ? `<b class="tnum">+${esc(C.fmtMoney(ch.price))}</b>` : ''}</label>`).join('')}
+        </fieldset>`;
+      }).join('')}
+      <label class="field"><span>${esc(t('noteOpt'))}</span><input id="os-note" value="${esc(O.note || '')}" placeholder="${esc(t('notePh'))}"></label>
+      ${O.err && (pk.missing.length || pk.over.length) ? `<p class="os-err">${esc(pk.missing.length ? t('optMissing', { g: pk.missing.join('، ') }) : t('optTooMany', { g: pk.over.join('، ') }))}</p>` : ''}
+      <button class="primary block big" data-act="optAdd">${plusIcon()} ${esc(t('optAddBtn', { p: money(price) }))}</button>
+    </div></div>`;
+  }
+
   function receiptModal() {
     const R = S.rview; if (!R) return '';
     const p = R.parsed || {};
@@ -3231,7 +3359,7 @@
         items: r.items.map(it => {
           const unit = C.num(it.price), qty = C.num(it.qty);
           const mv = priceMove(c.restaurant.name, it.name, unit);
-          return { name: it.name, qty, unit, total: C.round2(unit * qty), note: it.note || '', askedFor: it.askedFor || '', prev: mv ? mv.prev : null };
+          return { name: it.name, qty, unit, total: C.round2(unit * qty), note: C.itemNote(it), askedFor: it.askedFor || '', prev: mv ? mv.prev : null };
         }),
         subtotal: r.subtotal, lines: r.lines.map(l => ({ label: l.label, value: l.value, kind: l.kind })),
         exact: r.exact, total: r.total, prev: r.isHost ? 0 : r.prev, net: r.isHost ? r.total : Math.max(0, r.net), self: !!r.isHost,
@@ -3482,6 +3610,15 @@
     document.querySelectorAll('[data-fee]').forEach(inp => { S.draft.fees[inp.dataset.fee] = C.round2(C.num(inp.value)); });
     document.querySelectorAll('[data-change="itemName"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && inp.value.trim()) it.name = inp.value.trim(); });
     document.querySelectorAll('[data-change="itemPrice"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && C.num(inp.value) > 0 && C.round2(C.num(inp.value)) !== C.num(it.price)) { it.price = C.round2(C.num(inp.value)); it.at = Date.now(); } });
+    document.querySelectorAll('[data-og]').forEach(inp => {
+      const g = draftOg(inp.dataset.og); if (!g) return;
+      const v = inp.value.trim(), f = inp.dataset.f;
+      if (inp.dataset.c) {
+        const ch = g.choices.find(x => x.id === inp.dataset.c); if (!ch) return;
+        if (f === 'name') ch.name = v; else ch.price = C.round2(Math.max(0, C.num(C.latinDigits(v).replace(/[+\s]/g, '').replace(',', '.'))));
+      } else if (f === 'name') g.name = v;
+      else if (f === 'max') { const n = Math.round(C.num(C.latinDigits(v))); if (n > 0) g.max = n; else delete g.max; }
+    });
   }
   function syncNewOrder() { /* selections live in S.sel; nothing else to keep */ }
 
@@ -3557,6 +3694,34 @@
     admSettled: el => { S.adm.showSettled = el.checked; render(true); },
     itemName: () => syncDraft(),
     pickCat: el => actions.pickMove(el),
+    optPick: el => {
+      const O = S.optSheet, c = curCart(); if (!O || !c) return;
+      const n = $('#os-note'); if (n) O.note = n.value.trim();
+      const mi = (c.menu || []).find(x => x.id === O.menuId); if (!mi) return;
+      const g = C.groupsFor(mi, c.optGroups).find(x => x.id === el.dataset.g); if (!g) return;
+      let ids = (O.sel[g.id] || []).filter(x => x !== el.value);
+      if (!g.multi) ids = el.checked ? [el.value] : [];
+      else if (el.checked) { ids.push(el.value); const max = C.num(g.max); if (max && ids.length > max) ids = ids.slice(-max); }
+      O.sel[g.id] = ids; O.err = false;
+      render(true);
+    },
+    ogFlag: el => { syncDraft(); const g = draftOg(el.dataset.g); if (!g) return; g[el.dataset.f] = el.checked; if (el.dataset.f === 'multi' && !el.checked) delete g.max; S.ogOpen = g.id; render(true); },
+    itemOg: el => {
+      syncDraft();
+      const it = S.draft.items.find(i => i.id === el.dataset.id); if (!it) return;
+      const og = (it.og || []).filter(x => x !== el.value);
+      if (el.checked) og.push(el.value);
+      if (og.length) it.og = og; else delete it.og;
+      if (!redrawItem(it.id)) render(true);
+    },
+    pickOg: el => {
+      const g = draftOg(el.value); if (!g) return;
+      if (!S.picked || !S.picked.size) return toast(t('pickFirst'), 'warn');
+      let n = 0;
+      for (const it of S.draft.items) if (S.picked.has(it.id) && !(it.og || []).includes(g.id)) { it.og = (it.og || []).concat(g.id); n++; }
+      S.pickMode = false; S.picked = new Set(); render(true);
+      toast(t('ogLinkedN', { n, g: g.name }));
+    },
     itemCat: el => {
       syncDraft();
       const it = S.draft && S.draft.items.find(i => i.id === el.dataset.id); if (!it) return;
@@ -3738,6 +3903,19 @@
       if (phone && !C.isValidPhone(phone)) return toast(t('errPhone'), 'warn');
       guard(S.store.patchGroup(S.gid, { ['roster.g_' + rid(8)]: { name, phone, guest: true, joinedAt: Date.now() } }));
       form.reset(); toast(t('saved'));
+    },
+    ogNew: form => {
+      syncDraft();
+      const name = form.name.value.trim();
+      const choices = form.choices.value.split(/[,،؛;\n]+/).map(x => x.trim()).filter(Boolean).map(x => {
+        const m = C.latinDigits(x).match(/^(.*?)\s*\+\s*(\d+(?:[.,]\d+)?)\s*$/);
+        return { id: rid(6), name: (m ? m[1] : x).trim(), price: m ? C.round2(C.num(m[2].replace(',', '.'))) : 0 };
+      }).filter(c => c.name);
+      if (!name || !choices.length) return toast(t('ogErr'), 'warn');
+      const g = { id: rid(6), name, required: true, multi: false, choices };
+      S.draft.optGroups = (S.draft.optGroups || []).concat(g);
+      S.ogOpen = g.id; render(true);
+      toast(t('ogAddedHint', { g: name }));
     },
     draftAddItem: form => {
       syncDraft();

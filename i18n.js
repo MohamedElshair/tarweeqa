@@ -1,6 +1,15 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    /* item options (2026-11-27) */
+    noteOpt: 'ملاحظة (اختياري)', optRequired: 'إجباري', optOptional: 'اختياري', optPickOne: 'اختار واحد', optAny: 'اختار براحتك', optMaxN: 'لحد {n}',
+    optMissing: 'لازم تختار: {g}', optTooMany: 'اخترت أكتر من المسموح في: {g}', optAddBtn: 'أضف للطلب · {p}', optAdded: 'اتضاف: {name}',
+    ogTitle: 'خيارات الأصناف', ogHint: 'زي «نوع البيض: مقلي / مسلوق» أو «نوع العيش» أو «إضافات». اعمل المجموعة مرة واحدة واربطها بالأصناف اللي محتاجاها. الخيار ممكن يكون بزيادة في السعر.',
+    ogUnnamed: 'من غير اسم', ogUsedN: 'في {n} صنف', ogName: 'اسم المجموعة', ogRequired: 'إجباري يختار', ogMulti: 'يقدر يختار أكتر من واحد', ogMax: 'أقصى عدد',
+    ogChoice: 'الاختيار', ogExtra: 'زيادة السعر', ogAddChoice: 'اختيار تاني', ogDelete: 'امسح المجموعة', ogChoices: 'الاختيارات',
+    ogNamePh: 'نوع البيض', ogChoicesPh: 'مقلي، مسلوق، أومليت +2', ogChoicesHint: 'افصل بينهم بفاصلة. لو الاختيار بزيادة اكتب + والمبلغ. المجموعة الجديدة بتبقى إجبارية واختيار واحد — تقدر تغير ده بعدها.',
+    ogAdd: 'أضف مجموعة خيارات', ogForItem: 'خيارات الصنف', ogNoneYet: 'مفيش مجموعات خيارات لسه — اعملها من «خيارات الأصناف» فوق.',
+    ogLinkTo: 'اربط خيار…', ogLinkedN: '«{g}» اتربطت بـ {n} صنف', ogErr: 'اكتب اسم المجموعة واختيار واحد على الأقل', ogAddedHint: '«{g}» اتعملت. اربطها بالأصناف: افتح الصنف أو استخدم «حدّد أكتر من صنف».',
     pinShow: 'اظهر الرقم السري', pinHide: 'اخفي الرقم السري',
     ledgerTitle: 'كل الناس — كل المجموعات', ledgerOwedAll: 'ليك عند الناس', ledgerWallets: 'في محافظهم', ledgerOwes: 'عليه {a}', ledgerWallet: 'محفظته {a}', ledgerClear: 'خالص',
     ledgerOrder: 'الطلب', ledgerBill: 'الحساب', ledgerPaid: 'دفع', ledgerWalletHint: 'الـ {a} اللي في محفظته هتتخصم لوحدها من فاتورته الجاية.', ledgerOpenGroup: 'افتح «{g}»', ledgerThisGroup: 'المجموعة المفتوحة دلوقتي: {g}',
@@ -280,6 +289,15 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    /* item options (2026-11-27) */
+    noteOpt: 'Note (optional)', optRequired: 'Required', optOptional: 'Optional', optPickOne: 'Pick one', optAny: 'Pick any', optMaxN: 'Up to {n}',
+    optMissing: 'Please choose: {g}', optTooMany: 'Too many picked in: {g}', optAddBtn: 'Add to order · {p}', optAdded: 'Added: {name}',
+    ogTitle: 'Item options', ogHint: 'Like "Eggs: fried / boiled", "Bread type" or "Extras". Make a group once and link it to the items that need it. A choice can add to the price.',
+    ogUnnamed: 'Unnamed', ogUsedN: 'on {n} items', ogName: 'Group name', ogRequired: 'Must choose', ogMulti: 'Can pick more than one', ogMax: 'Max',
+    ogChoice: 'Choice', ogExtra: 'Extra price', ogAddChoice: 'Another choice', ogDelete: 'Delete group', ogChoices: 'Choices',
+    ogNamePh: 'Eggs', ogChoicesPh: 'Fried, Boiled, Omelette +2', ogChoicesHint: 'Separate with commas. For a choice that costs more, write + and the amount. A new group is required, pick one — you can change that after.',
+    ogAdd: 'Add option group', ogForItem: 'Item options', ogNoneYet: 'No option groups yet — make one under "Item options" above.',
+    ogLinkTo: 'Link option…', ogLinkedN: '"{g}" linked to {n} items', ogErr: 'Write the group name and at least one choice', ogAddedHint: '"{g}" made. Link it to items: open an item or use "Select several".',
     pinShow: 'Show PIN', pinHide: 'Hide PIN',
     ledgerTitle: 'Everyone — all groups', ledgerOwedAll: 'Owed to you', ledgerWallets: 'In their wallets', ledgerOwes: 'owes {a}', ledgerWallet: 'wallet {a}', ledgerClear: 'All clear',
     ledgerOrder: 'Order', ledgerBill: 'Bill', ledgerPaid: 'Paid', ledgerWalletHint: 'The {a} in the wallet comes off the next invoice automatically.', ledgerOpenGroup: 'Open "{g}"', ledgerThisGroup: 'Group open now: {g}',

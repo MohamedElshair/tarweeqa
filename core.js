@@ -636,6 +636,33 @@
     return '';
   }
 
+  /* ---------------- Item options (e.g. eggs: fried / boiled) ----------------
+     A restaurant keeps optGroups = [{ id, name, required, multi, max, choices: [{ id, name, price }] }]
+     and each menu item lists the groups it uses in og = [groupId…].
+     An ordered item keeps a copy of what was picked: opts = [{ g, n, p }] (group name, choice name, extra price),
+     optDelta = the extra money, base = the item's own price, price = base + optDelta. */
+  function groupsFor(menuItem, groups) {
+    const ids = (menuItem && menuItem.og) || [];
+    return ids.map(id => (groups || []).find(g => g.id === id)).filter(g => g && (g.choices || []).length);
+  }
+  function optText(it) { return ((it && it.opts) || []).map(o => o.n).join('، '); }
+  function optDelta(it) { return round2(((it && it.opts) || []).reduce((s, o) => s + num(o.p), 0)); }
+  // what goes next to the item's name everywhere: the picked options, then the person's own note
+  function itemNote(it) { return [optText(it), String((it && it.note) || '').trim()].filter(Boolean).join(' — '); }
+  // sel = { groupId: [choiceId…] } → { opts, delta, missing: [group names still to pick], over: [groups with too many] }
+  function pickOptions(groups, sel) {
+    const opts = [], missing = [], over = [];
+    for (const g of groups || []) {
+      const ids = ((sel || {})[g.id] || []).filter(id => (g.choices || []).some(c => c.id === id));
+      if (g.required && !ids.length) missing.push(g.name);
+      const max = g.multi ? (num(g.max) || 0) : 1;
+      if (max && ids.length > max) over.push(g.name);
+      for (const c of g.choices || []) if (ids.includes(c.id)) opts.push({ g: g.name, n: c.name, p: round2(num(c.price)) });
+    }
+    return { opts, delta: round2(opts.reduce((s, o) => s + o.p, 0)), missing, over };
+  }
+  function optKey(it) { return ((it && it.opts) || []).map(o => o.g + ':' + o.n).join('|'); }
+
   /* Combined order for placing it on Talabat / by phone */
   function aggregate(cart) {
     const map = new Map();
@@ -646,9 +673,9 @@
       for (const it of (m.items || [])) {
         const qty = num(it.qty);
         if (qty <= 0) continue;
-        const note = (it.note || '').trim();
+        const note = itemNote(it);
         const key = it.name.trim() + '|' + num(it.price) + '|' + note;
-        if (!map.has(key)) map.set(key, { name: it.name.trim(), price: num(it.price), note, qty: 0, who: [], custom: !!it.custom && !!it.noPrice });
+        if (!map.has(key)) map.set(key, { name: it.name.trim(), price: num(it.price), note, opt: optText(it), userNote: String(it.note || '').trim(), qty: 0, who: [], custom: !!it.custom && !!it.noPrice });
         const row = map.get(key);
         row.qty += qty;
         row.who.push({ name: m.name, qty });
@@ -658,7 +685,7 @@
       const qty = num(x.qty) || 1;
       if (num(x.price) <= 0 || !(x.keys || []).length) continue;
       const key = x.name.trim() + '|' + num(x.price) + '|';
-      if (!map.has(key)) map.set(key, { name: x.name.trim(), price: num(x.price), note: '', qty: 0, who: [], custom: false });
+      if (!map.has(key)) map.set(key, { name: x.name.trim(), price: num(x.price), note: '', opt: '', userNote: '', qty: 0, who: [], custom: false });
       const row = map.get(key);
       row.qty += qty; row.shared = true;
       row.who.push({ name: x.keys.map(k => (ms[k] && ms[k].name) || k).join('+'), qty });
@@ -695,7 +722,7 @@
     return { km: round2(km), limit, state: km <= limit ? 'near' : 'far' };
   }
 
-  const api = { distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, autoCategory, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
+  const api = { groupsFor, optText, optDelta, itemNote, pickOptions, optKey, distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, autoCategory, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TarweeqaCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
