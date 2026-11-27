@@ -1586,7 +1586,7 @@
   // swap one item's row in place, without drawing the whole page again (fast with long menus)
   function saveBarState() {
     const bar = document.querySelector('.sticky-actions');
-    if (bar) bar.classList.toggle('away', !!S.editItem || !!S.pickMode);
+    if (bar) bar.classList.toggle('away', !!S.pickMode);
   }
   function redrawItem(id) {
     const li = document.querySelector(`.edit-items li[data-item="${CSS.escape(id)}"]`);
@@ -1741,7 +1741,7 @@
         </form>
       </section>
 
-      <div class="sticky-actions${S.editItem || S.pickMode ? ' away' : ''}">
+      <div class="sticky-actions${S.pickMode ? ' away' : ''}">
         <button class="primary block" data-act="saveRestaurant">${esc(t('save'))}</button>
         ${d.id ? `<button class="danger-ghost" data-act="deleteRestaurant">${esc(S.confirmKey === 'delRest' ? t('confirmAgain') : t('deleteRest'))}</button>` : ''}
       </div>`;
@@ -2196,7 +2196,7 @@
       toast(t('optAdded', { name: mi.name + (pk.opts.length ? ' (' + C.optText({ opts: pk.opts }) + ')' : '') }));
     },
     /* option groups (admin, restaurant editor) */
-    ogGoPanel: () => { syncDraft(); const prev = S.editItem; S.editItem = null; if (!prev || !redrawItem(prev)) render(true); saveBarState(); const pnl = $('#og-panel'); if (pnl) { pnl.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => { const n = $('#og-new-name'); if (n) n.focus({ preventScroll: true }); }, 400); } },
+    ogGoPanel: () => { syncDraft(); const prev = S.editItem; S.ogFor = prev; S.editItem = null; if (!prev || !redrawItem(prev)) render(true); saveBarState(); const pnl = $('#og-panel'); if (pnl) { pnl.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => { const n = $('#og-new-name'); if (n) n.focus({ preventScroll: true }); }, 400); } },
     ogAddChoice: el => { syncDraft(); const g = draftOg(el.dataset.g); if (!g) return; g.choices.push({ id: rid(6), name: '', price: 0 }); S.ogOpen = g.id; render(true); const ins = document.querySelectorAll(`[data-og="${CSS.escape(g.id)}"][data-c][data-f="name"]`); if (ins.length) ins[ins.length - 1].focus(); },
     ogDelChoice: el => { syncDraft(); const g = draftOg(el.dataset.g); if (!g) return; g.choices = g.choices.filter(c => c.id !== el.dataset.c); S.ogOpen = g.id; render(true); },
     ogDel: el => {
@@ -2394,9 +2394,15 @@
       S.ocr = null;
       if (id && S.pendingMenu && S.store.saveReceipt) { const pm = S.pendingMenu; S.pendingMenu = null; S.store.saveReceipt(S.gid, Object.assign({ restName: d.name }, pm)).catch(e => console.warn(e)); }
       if (!id) return;
-      toast(t('saved'));
-      if (S.route.from === 'newOrder') { if (!S.sel.includes(id)) S.sel.push(id); go('newOrder'); }
-      else go(S.route.from === 'admin' ? 'admin' : 'restaurants');
+      // open orders from this restaurant get the new menu and options right away (items people already picked stay as they are)
+      const snap = snapshotOf(Object.assign({}, d, { id }));
+      const open = S.carts.filter(c => c.restaurantId === id && isOpenStage(stageOf(c)) && isHost(c));
+      for (const c of open) guard(S.store.patchCart(S.gid, c.id, { menu: snap.menu, optGroups: snap.optGroups }));
+      toast(open.length ? t('savedOpenToo') : t('saved'));
+      if (S.route.from === 'newOrder') { if (!S.sel.includes(id)) S.sel.push(id); return go('newOrder'); }
+      // stay on the restaurant: there is usually more to edit
+      d.id = id; d.items.forEach(i => { delete i.fresh; delete i.oldPrice; });
+      render(true);
     },
     deleteRestaurant: async () => {
       if (S.confirmKey !== 'delRest') { syncDraft(); S.confirmKey = 'delRest'; return render(true); }
@@ -3984,6 +3990,16 @@
       if (!name || !choices.length) return toast(t('ogErr'), 'warn');
       const g = { id: rid(6), name, required: true, multi: false, choices };
       S.draft.optGroups = (S.draft.optGroups || []).concat(g);
+      const forIt = S.ogFor && S.draft.items.find(i => i.id === S.ogFor);
+      S.ogFor = null;
+      if (forIt) {
+        // made from an item's editor: link it to that item and go back to it
+        forIt.og = (forIt.og || []).concat(g.id);
+        S.editItem = forIt.id; render(true);
+        const li = document.querySelector(`.edit-items li[data-item="${CSS.escape(forIt.id)}"]`);
+        if (li) li.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return toast(t('ogLinkedOne', { g: name, i: forIt.name }));
+      }
       S.ogOpen = g.id; render(true);
       toast(t('ogAddedHint', { g: name }));
     },
