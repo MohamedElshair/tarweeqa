@@ -1,6 +1,16 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    /* group-locked ordering, solo orders, sticky reminder (2026-11-27) */
+    nagNone: 'في طلب مفتوح من {rest} — لسه ماطلبتش', nagPicking: 'طلبك من {rest} لسه مش متأكد', nagUntil: 'بيقفل الساعة {t}',
+    nagDone: '✓ أنا انتهيت', nagOrder: 'اطلب دلوقتي', nagSkip: 'مش طالب النهاردة', nagFinish: 'كمّل طلبي',
+    groupOrderNow: 'طلب المجموعة النهاردة', soloInstead: 'مش عايز من {rest}؟ اطلب لوحدك', soloConfirm: 'هتخرج من طلب المجموعة. دوس تاني للتأكيد',
+    soloTitle: 'اطلب لوحدك', soloSub: 'اختار مطعم وطلبك هيبقى ليك لوحدك — محدش في المجموعة هيشوفه.', soloStart: 'اطلب من هنا',
+    soloChip: 'لوحده', soloMine: 'طلبك لوحدك', availRests: 'المطاعم المتاحة', availHint: 'مفيش طلب للمجموعة دلوقتي. لما الأدمن يفتح طلب هيظهر هنا على طول، أو اطلب لوحدك من أي مطعم.',
+    soloOrderedNote: 'ده طلبك لوحدك: انسخ القائمة من «الطلب» واطلبها بنفسك.', backToGroup: 'ارجع لطلب المجموعة',
+    quickStart: 'افتح طلب «{g}» من:', quickHint: 'نفس الناس كل مرة — بس اختار المطعم. الطلب بيقفل بعد {n} دقيقة (تقدر تغيّرها من جوه).', moreOptions: 'اختيارات أكتر…',
+    changeRest: 'غيّر المطعم', changeRestHint: 'نفس الناس، مطعم تاني.', changeRestWarn: 'في {n} طلبوا بالفعل — أصنافهم هتتمسح. دوس تاني على المطعم للتأكيد.', restChanged: 'المطعم اتغيّر لـ {r}',
+    pickGroup: 'المجموعة', testAccount: 'حساب تجربة',
     pickFirst: 'حدّد صنف واحد على الأقل الأول', cancel: 'إلغاء', pickSome: 'حدّد أكتر من صنف', pickedN: 'محدد {n}', moveTo: 'انقل إلى…', moveBtn: 'انقل', movedN: 'اتنقل {n} صنف لـ «{c}». دوس «حفظ».', deletedN: 'اتمسح {n} صنف. دوس «حفظ».',
     tqFeeTitle: 'عمولة ترويقة', tqFeeLabel: 'عمولة ترويقة', tqFeeMode: 'طريقة الحساب', tqFeePct: 'نسبة % من أكل كل واحد', tqFeeFixed: 'مبلغ ثابت على كل واحد', tqFeePctVal: 'النسبة %', tqFeeFixedVal: 'المبلغ (ج.م)', tqFeeHint: 'بتتضاف سطر لوحدها في فاتورة كل واحد. صاحب الطلب مش بيدفعها.', tqFeeDefaultHint: 'دي القيمة اللي بتتحط تلقائي في أي طلب جديد، وتقدر تغيّرها لكل طلب من «الحساب».', tqFeeSum: 'العمولة في الطلب ده: {a}',
     walletLeft: 'باقي في محفظتك بعد الطلب ده: {a}', payByWallet: 'اتدفع من المحفظة', walletBal: 'محفظتك', walletHint: 'فلوس زيادة دفعتها، هتتخصم من طلبك الجاي لوحدها.',
@@ -267,6 +277,15 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    nagNone: 'Order open from {rest} — you haven\'t ordered', nagPicking: 'Your {rest} order isn\'t confirmed yet', nagUntil: 'closes at {t}',
+    nagDone: '✓ I\'m done', nagOrder: 'Order now', nagSkip: 'Not eating today', nagFinish: 'Finish my order',
+    groupOrderNow: "Today's group order", soloInstead: "Don't want {rest}? Order by yourself", soloConfirm: 'You will leave the group order. Tap again to confirm',
+    soloTitle: 'Order by yourself', soloSub: 'Pick a restaurant — this order is yours only; nobody in the group sees it.', soloStart: 'Order here',
+    soloChip: 'Solo', soloMine: 'Your solo order', availRests: 'Available restaurants', availHint: 'No group order right now. When the admin starts one it shows up here, or order by yourself from any restaurant.',
+    soloOrderedNote: 'This is your own order: copy the list from "Order" and place it yourself.', backToGroup: 'Back to the group order',
+    quickStart: 'Start a "{g}" order from:', quickHint: 'Same people every time — just pick the restaurant. Closes in {n} min (change it inside).', moreOptions: 'More options…',
+    changeRest: 'Change restaurant', changeRestHint: 'Same people, another restaurant.', changeRestWarn: '{n} already ordered — their items will be cleared. Tap the restaurant again to confirm.', restChanged: 'Restaurant changed to {r}',
+    pickGroup: 'Group', testAccount: 'Test account',
     pickFirst: 'Select at least one item first', cancel: 'Cancel', pickSome: 'Select several', pickedN: '{n} selected', moveTo: 'Move to…', moveBtn: 'Move', movedN: 'Moved {n} items to “{c}”. Tap “Save”.', deletedN: 'Deleted {n} items. Tap “Save”.',
     tqFeeTitle: 'Tarweeqa commission', tqFeeLabel: 'Tarweeqa fee', tqFeeMode: 'How', tqFeePct: '% of each person’s food', tqFeeFixed: 'Fixed amount per person', tqFeePctVal: 'Percent %', tqFeeFixedVal: 'Amount (EGP)', tqFeeHint: 'Added as its own line on each person’s bill. The host doesn’t pay it.', tqFeeDefaultHint: 'This is filled in for every new order; change it per order in “Bill”.', tqFeeSum: 'Commission on this order: {a}',
     walletLeft: 'Left in your wallet after this order: {a}', payByWallet: 'Paid from wallet', walletBal: 'Your wallet', walletHint: 'Extra you paid; it comes off your next order by itself.',

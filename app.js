@@ -78,12 +78,20 @@
   const ADMIN_ROUTES = ['newOrder', 'restaurants', 'restaurant'];   // members only order: these screens are for admins
   const needsPin = () => !isLocal() && !!person() && (!person().hasPin || person().mustSetPin);
   const cartById = id => S.carts.find(c => c.id === id) || null;
+  const isTestPhone = p => String(p || '').replace(/\D/g, '') === String(CFG.testPhone || '123456');
+  // open orders I should still act on: the group's order(s) and my own solo order, newest first
+  const openForMe = () => S.carts.filter(c => stageOf(c) === 'ordering' && (!c.solo || c.ownerId === me()) && people(c)[me()]).sort((a, b) => b.createdAt - a.createdAt);
+  // the one order the sticky reminder is about: picked nothing yet, or picked but never pressed "I'm done"
+  function nagCart() {
+    return openForMe().find(c => ['none', 'picking'].includes(personStatus(c, me()))) || null;
+  }
 
   /* everyone in the group, plus anyone who joined this order */
   function people(c) {
     const out = {};
     const roster = (S.group && S.group.roster) || {};
-    for (const k of Object.keys(roster)) out[k] = Object.assign({ key: k }, roster[k]);
+    if (c && c.solo) { if (roster[c.ownerId]) out[c.ownerId] = Object.assign({ key: c.ownerId }, roster[c.ownerId]); else out[c.ownerId] = { key: c.ownerId, name: c.ownerName, phone: c.ownerPhone }; }
+    else for (const k of Object.keys(roster)) out[k] = Object.assign({ key: k }, roster[k]);
     if (c) for (const k of Object.keys(c.members || {})) out[k] = Object.assign({ key: k }, out[k] || {}, { name: c.members[k].name, phone: c.members[k].phone || (out[k] || {}).phone, guest: c.members[k].guest || (out[k] || {}).guest });
     return out;
   }
@@ -254,13 +262,35 @@
         </div>
       </header>
       ${demo ? `<div class="demo-bar">${acting}<p>${esc(t('demoNote'))}</p></div>` : ''}
-      <main class="page">${body}</main>
+      <main class="page${nagCart() ? ' has-nag' : ''}">${body}</main>
+      ${nagBar()}
       <nav class="bottom-nav">
         ${tab('home', icoHome(), t('navHome'))}
         ${isSiteAdmin() ? tab('admin', icoShield(), t('navAdmin')) : isAdmin() ? tab('restaurants', icoMenu(), t('navRestaurants')) : ''}
         ${tab('money', icoCoins(), t('navMoney'), pend ? `<i class="badge tnum">${pend}</i>` : '')}
         ${tab('group', icoPeople(), t('navGroup'))}
       </nav>`;
+  }
+
+  /* the sticky reminder: stays on every screen until I press "I'm done" (or say I'm not eating) */
+  function nagBar() {
+    const c = nagCart();
+    if (!c) { document.title = t('appName'); return ''; }
+    const st = personStatus(c, me());
+    const m = (c.members || {})[me()] || {};
+    const has = (m.items || []).length > 0;
+    const rest = c.restaurant ? c.restaurant.name : '';
+    document.title = '(!) ' + t('appName');
+    const onCart = S.route.name === 'cart' && S.route.id === c.id;
+    return `<aside class="nag-bar" role="status" aria-live="polite">
+      <div class="nag-txt">${restLogo(c, rest, 'sm')}<span><strong>${esc(st === 'picking' ? t('nagPicking', { rest }) : t('nagNone', { rest }))}</strong>
+        <small class="tnum">${esc(t('nagUntil', { t: fmtTime(c.closesAt) }))} · <span data-countdown="${c.closesAt}"></span></small></span></div>
+      <div class="nag-btns">
+        ${has ? `<button class="primary" data-act="doneFor" data-id="${esc(c.id)}">${esc(t('nagDone'))}</button>`
+              : `${onCart ? '' : `<button class="primary" data-act="openCart" data-id="${esc(c.id)}">${esc(t('nagOrder'))}</button>`}${c.solo ? '' : `<button class="ghost small" data-act="skipFor" data-id="${esc(c.id)}">${esc(t('nagSkip'))}</button>`}`}
+        ${has && !onCart ? `<button class="ghost small" data-act="openCart" data-id="${esc(c.id)}">${esc(t('nagFinish'))}</button>` : ''}
+      </div>
+    </aside>`;
   }
 
   /* icons */
@@ -394,24 +424,73 @@
 
   /* ---------- home ---------- */
   function viewHome() {
+    if (!isAdmin()) return viewHomeMember();
     const hour = new Date().getHours();
     const active = S.carts.filter(isActive).sort((a, b) => b.createdAt - a.createdAt);
     const recent = S.carts.filter(c => !isActive(c)).sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
+    const groupOpen = active.some(c => !c.solo && isOpenStage(stageOf(c)));
     return `
       <section class="hello">
         <h1>${esc(hour < 12 ? t('morning') : t('hello'))}${comma()}${esc(S.profile.name)}</h1>
         <p class="muted">${esc(t('tagline'))}</p>
       </section>
-      ${collectNag()}
-      ${isSiteAdmin() ? `<button class="row-link admin-entry" data-act="nav" data-to="admin">${icoShield()}<span><strong>${esc(t('adminTitle'))}</strong><small class="muted">${esc(t('adminEntryHint'))}</small></span><span class="chev" aria-hidden="true">›</span></button>` : ''}
       ${active.length ? `<section class="stack">${active.map(activeCard).join('')}</section>` : ''}
-      ${isAdmin() ? `<button class="${active.length ? 'secondary' : 'primary'} block big" data-act="nav" data-to="newOrder">${plusIcon()} ${esc(active.length ? t('anotherOrder') : t('newOrder'))}</button>`
-        : (active.length ? '' : `<p class="empty">${esc(t('memberNoOrder'))}</p>`)}
+      ${groupOpen ? '' : quickStart()}
+      ${collectNag()}
+      ${groupOpen ? `<button class="secondary block" data-act="nav" data-to="newOrder">${plusIcon()} ${esc(t('anotherOrder'))}</button>` : ''}
+      ${isSiteAdmin() ? `<button class="row-link admin-entry" data-act="nav" data-to="admin">${icoShield()}<span><strong>${esc(t('adminTitle'))}</strong><small class="muted">${esc(t('adminEntryHint'))}</small></span><span class="chev" aria-hidden="true">›</span></button>` : ''}
       ${moneySummary()}
       <section>
         <div class="section-head"><h2>${esc(t('recentOrders'))}</h2></div>
         ${recent.length ? `<ul class="cart-list">${recent.map(cartRow).join('')}</ul>` : `<p class="empty">${esc(t('noOrders'))}</p>`}
       </section>`;
+  }
+
+  /* admin: the group is fixed, so starting today's order is just "which restaurant?" */
+  function quickStart() {
+    const list = S.restaurants.filter(r => reachOf(r).state !== 'far').sort((a, b) => (b.lastOrderedAt || 0) - (a.lastOrderedAt || 0));
+    if (!list.length) return `<button class="primary block big" data-act="nav" data-to="newOrder">${plusIcon()} ${esc(t('newOrder'))}</button>`;
+    return `<section class="panel quick-start">
+      <p class="label">${esc(t('quickStart', { g: S.group.name }))}</p>
+      <div class="quick-rests">${list.map(r => `<button class="quick-rest" data-act="quickStart" data-id="${esc(r.id)}">${restLogo(r, r.name)}<span>${esc(r.name)}</span></button>`).join('')}</div>
+      <small class="muted">${esc(t('quickHint', { n: CFG.defaultCartMinutes || 30 }))}</small>
+      <button class="ghost small" data-act="nav" data-to="newOrder">${esc(t('moreOptions'))}</button>
+    </section>`;
+  }
+
+  /* members: while the group has an order, that restaurant is all they see; otherwise the restaurants they can order from alone */
+  function viewHomeMember() {
+    const hour = new Date().getHours();
+    const groupCarts = S.carts.filter(c => !c.solo && isActive(c)).sort((a, b) => b.createdAt - a.createdAt);
+    const mySolo = S.carts.filter(c => c.solo && c.ownerId === me() && isActive(c)).sort((a, b) => b.createdAt - a.createdAt);
+    const inGroup = groupCarts.filter(c => personStatus(c, me()) !== 'out');
+    const hello = `<section class="hello"><h1>${esc(hour < 12 ? t('morning') : t('hello'))}${comma()}${esc(S.profile.name)}</h1></section>`;
+    if (inGroup.length) {
+      const c = inGroup[0];
+      const open = stageOf(c) === 'ordering';
+      return `${hello}
+        <p class="label">${esc(t('groupOrderNow'))}</p>
+        <section class="stack">${inGroup.map(activeCard).join('')}</section>
+        ${open && S.restaurants.length > 1 ? `<button class="ghost small center" data-act="goSolo" data-id="${esc(c.id)}">${esc(S.confirmKey === 'solo:' + c.id ? t('soloConfirm') : t('soloInstead', { rest: c.restaurant ? c.restaurant.name : '' }))}</button>` : ''}
+        ${moneySummary()}`;
+    }
+    const back2 = groupCarts.find(c => stageOf(c) === 'ordering');
+    return `${hello}
+      ${mySolo.length ? `<p class="label">${esc(t('soloMine'))}</p><section class="stack">${mySolo.map(activeCard).join('')}</section>` : ''}
+      ${back2 ? `<button class="secondary block" data-act="backToGroup" data-id="${esc(back2.id)}">${esc(t('backToGroup'))} — ${esc(back2.restaurant ? back2.restaurant.name : '')}</button>` : ''}
+      ${mySolo.length ? '' : soloList(!back2)}
+      ${moneySummary()}`;
+  }
+
+  /* the restaurants a member can order from by himself */
+  function soloList(showHint) {
+    const list = S.restaurants.filter(r => reachOf(r).state !== 'far' && (r.items || []).length).sort((a, b) => (b.lastOrderedAt || 0) - (a.lastOrderedAt || 0));
+    return `<section class="panel">
+      <p class="label">${esc(t('availRests'))}</p>
+      ${showHint ? `<p class="muted small-text">${esc(t('availHint'))}</p>` : `<p class="muted small-text">${esc(t('soloSub'))}</p>`}
+      ${list.length ? `<ul class="solo-rests">${list.map(r => `<li>${restLogo(r, r.name)}<span class="pick-main"><strong>${esc(r.name)}</strong><small class="muted">${esc(t('itemsCount', { n: (r.items || []).length }))}</small></span>
+        <button class="secondary small" data-act="soloStart" data-id="${esc(r.id)}">${esc(t('soloStart'))}</button></li>`).join('')}</ul>` : `<p class="empty">${esc(t('noRestaurants'))}</p>`}
+    </section>`;
   }
 
   function activeCard(c) {
@@ -425,6 +504,9 @@
       const v = C.tallyVotes(c);
       title = t('votingTitle');
       sub = t('votesCount', { n: v.total, m: keys.filter(k => !k.startsWith('g_')).length });
+    } else if (c.solo) {
+      title = c.restaurant.name;
+      sub = t('soloMine');
     } else {
       title = c.restaurant.name;
       sub = `${t('cntDone', { n: count('done') })} · ${t('cntPicking', { n: count('picking') })} · ${t('cntNone', { n: count('none') })}`;
@@ -433,7 +515,7 @@
     return `<button class="active-card state-${st}" data-act="openCart" data-id="${esc(c.id)}">
       <span class="ac-top">${statusChip(st)}<span class="tnum clock-sm">${st === 'voting' || st === 'ordering' ? `<span data-countdown="${c.closesAt}"></span>` : ''}</span></span>
       <strong class="ac-title">${st !== 'voting' ? restLogo(c, c.restaurant.name, 'sm') : ''}${esc(title)}</strong>
-      <small class="muted">${esc(c.title || '')}${c.title ? ' · ' : ''}${esc(t('host'))}: ${esc(c.ownerId === me() ? t('you') : c.ownerName)}</small>
+      <small class="muted">${c.solo ? `<span class="chip chip-out">${esc(t('soloChip'))}</span> ` : ''}${esc(c.title || '')}${c.title ? ' · ' : ''}${esc(t('host'))}: ${esc(c.ownerId === me() ? t('you') : c.ownerName)}</small>
       <span class="ac-stats tnum">${esc(sub)}</span>
       ${st !== 'voting' ? `<span class="ac-me">${personChip(mine)}${est && est.total ? `<span class="tnum">${esc(t('yourEstimate'))} ≈ <b>${esc(money(est.total))}</b></span>` : ''}</span>` : ''}
     </button>`;
@@ -516,6 +598,7 @@
     return `${back('home')}
       <h1>${esc(t('newOrder'))}</h1>
       <form class="form" data-submit="createCart" novalidate>
+        ${S.groups.length > 1 ? `<label class="field"><span>${esc(t('pickGroup'))}</span><select id="nc-group" data-change="pickGroup">${S.groups.map(g => `<option value="${esc(g.id)}"${g.id === S.gid ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>` : ''}
         <section class="panel">
           <div class="section-head"><p class="label">${esc(t('pickRest'))}</p><button type="button" class="ghost small" data-act="newRestaurant">${plusIcon()} ${esc(t('addRestaurant'))}</button></div>
           <p class="muted small-text">${esc(t('pickRestHint'))}</p>
@@ -586,8 +669,12 @@
           <small class="muted tnum">${esc(t('closesAt', { t: fmtTime(c.closesAt) }))}</small>
         </div>
       </section>
-      ${isOpenStage(st) ? shareBox(c, st) : ''}
-      ${banner}`;
+      ${isOpenStage(st) && !c.solo ? shareBox(c, st) : ''}
+      ${banner}
+      ${c.solo ? `<p class="banner soft"><span>${esc(t('soloOrderedNote'))}</span></p>` : ''}
+      ${host && !c.solo && isAdmin() && (st === 'ordering' || st === 'closed') ? changeRestPanel(c) : ''}
+      ${!host && !c.solo && st === 'ordering' && personStatus(c, me()) !== 'out' && S.restaurants.length > 1
+        ? `<button class="ghost small center" data-act="goSolo" data-id="${esc(c.id)}">${esc(S.confirmKey === 'solo:' + c.id ? t('soloConfirm') : t('soloInstead', { rest: c.restaurant.name }))}</button>` : ''}`;
     if (st === 'voting') return head + votingView(c);
     if (tab === 'bill' && c.restaurant && !S.history[c.restaurant.name]) { S.history[c.restaurant.name] = []; loadHistory(c.restaurant.name, true); }
     const tabs = host ? [['mine', t('tabMine')], ['people', t('tabPeople') + ` <span class="tab-count tnum">${keys.length - waiting.length}/${keys.length}</span>`], ['order', t('tabOrder')], ['bill', t('tabBill')]]
@@ -601,6 +688,19 @@
         ${tab === 'order' ? tabOrder(c, st, host) : ''}
         ${tab === 'bill' ? tabBill(c, st, host) : ''}
       </div>`;
+  }
+
+  function changeRestPanel(c) {
+    if (!S.route.change) return `<button class="ghost small" data-act="changeRestOpen">⇄ ${esc(t('changeRest'))}</button>`;
+    const ordered = Object.values(c.members || {}).filter(m => (m.items || []).length).length;
+    const list = S.restaurants.filter(r => r.id !== c.restaurantId && reachOf(r).state !== 'far');
+    const warnFor = (S.confirmKey || '').startsWith('chg:') ? S.confirmKey.slice(4) : null;
+    return `<section class="panel">
+      <div class="section-head"><p class="label">${esc(t('changeRest'))}</p><button class="ghost small" data-act="changeRestOpen">${esc(t('cancel'))}</button></div>
+      <p class="muted small-text">${esc(t('changeRestHint'))}</p>
+      ${warnFor ? `<p class="form-error">${esc(t('changeRestWarn', { n: ordered }))}</p>` : ''}
+      <div class="quick-rests">${list.map(r => `<button class="quick-rest${warnFor === r.id ? ' on' : ''}" data-act="changeRest" data-id="${esc(r.id)}">${restLogo(r, r.name)}<span>${esc(r.name)}</span></button>`).join('')}</div>
+    </section>`;
   }
 
   function inviteText(c, st) {
@@ -665,10 +765,10 @@
     const forOther = key !== me();
     const who = forOther ? ppl[key].name : '';
 
-    const picker = host ? `<label class="for-who"><span>${esc(t('orderingFor'))}</span>
+    const picker = host && !c.solo ? `<label class="for-who"><span>${esc(t('orderingFor'))}</span>
       <select id="act-for" data-change="actFor">${Object.keys(ppl).map(k => `<option value="${esc(k)}"${k === key ? ' selected' : ''}>${esc(ppl[k].name)}${k === me() ? ' (' + esc(t('you')) + ')' : ''}</option>`).join('')}</select></label>` : '';
 
-    const attend = canEdit ? `<div class="attend" role="group" aria-label="${esc(t('attendQ'))}">
+    const attend = canEdit && !c.solo ? `<div class="attend" role="group" aria-label="${esc(t('attendQ'))}">
         <p class="label">${esc(forOther ? t('attendQOther', { name: who }) : t('attendQ'))}</p>
         <div class="seg">
           <button class="${m.status && m.status !== 'out' ? 'on' : ''}" data-act="attend" data-v="in" aria-pressed="${m.status && m.status !== 'out'}">${esc(t('attendIn'))}</button>
@@ -2095,6 +2195,8 @@
       saveMember(c, key, m);
     },
     done: () => { const c = curCart(), key = actKey(c), m = memberFor(c, key); m.done = true; m.status = 'in'; saveMember(c, key, m); },
+    doneFor: el => { const c = cartById(el.dataset.id); if (!c) return; const m = memberFor(c, me()); if (!(m.items || []).length) return go('cart', { id: c.id, tab: 'mine' }); m.done = true; m.status = 'in'; saveMember(c, me(), m); toast(t('doneOn')); },
+    skipFor: el => { const c = cartById(el.dataset.id); if (!c) return; const m = memberFor(c, me()); m.status = 'out'; m.items = []; m.done = true; saveMember(c, me(), m); },
     undoDone: () => { const c = curCart(), key = actKey(c), m = memberFor(c, key); m.done = false; saveMember(c, key, m); },
 
     extend: () => { const c = curCart(); patch(c, { closesAt: Math.max(Date.now(), c.closesAt) + 10 * 60000, stage: 'ordering' }); },
@@ -2105,7 +2207,7 @@
       const p = { stage: 'ordered', closesAt: Math.min(c.closesAt, Date.now()) };
       if (!(c.charges || []).length) p.charges = chargesFromEstimate(c);
       await patch(c, p);
-      if (c.restaurantId && S.restaurants.some(r => r.id === c.restaurantId)) guard(S.store.patchRestaurant(S.gid, c.restaurantId, { lastOrderedAt: Date.now() }));
+      if (isAdmin() && c.restaurantId && S.restaurants.some(r => r.id === c.restaurantId)) guard(S.store.patchRestaurant(S.gid, c.restaurantId, { lastOrderedAt: Date.now() }));
       S.route.tab = 'bill'; render(true);
     },
 
@@ -3244,6 +3346,7 @@
   function setLang(l) { S.lang = l === 'en' ? 'en' : 'ar'; LS.set('tarweeqa.lang', S.lang); render(true); }
 
   const changes = {
+    pickGroup: el => { if (el.value && el.value !== S.gid) { S.sel = []; setGroup(el.value, true); go('newOrder'); } },
     acting: el => {
       S.store.setActing(el.value);
       S.profile = S.store.profile();
@@ -3377,7 +3480,7 @@
     authPhone: async form => {
       const phone = form.phone.value.trim();
       S.authPhone = phone; S.authMsg = null;
-      if (!C.isValidPhone(phone)) return showErr('#w-err', t('errPhone'));
+      if (!C.isValidPhone(phone) && !isTestPhone(phone)) return showErr('#w-err', t('errPhone'));
       const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
       let st = null;
       try { st = await S.store.checkPhone(phone); } catch (e) { console.warn(e); if (btn) btn.disabled = false; return showErr('#w-err', t('errWrite')); }
@@ -3535,15 +3638,7 @@
         if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
         if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(S.profile.name, { instapay, instapayLink, wallet }));
       }
-      const uid = me();
-      const cart = {
-        title: form.title.value.trim(), ownerId: uid, ownerName: S.profile.name, ownerPhone: S.profile.phone,
-        createdAt: Date.now(), closesAt: close.getTime(),
-        candidates: [], candidateInfo: {}, votes: {}, members: {}, payments: {}, charges: [], roundUp: true,
-        payInfo: { instapay, instapayLink, wallet },
-        hostExempt: !!S.profile.hostExempt, hostFee: C.num(S.profile.hostFee) || 0, hostFeeLabel: t('hostFeeLabel'),
-        tqFee: { mode: S.profile.tqFeeMode || 'pct', value: C.num(S.profile.tqFeeValue) || 0 }, tqFeeLabel: t('tqFeeLabel')
-      };
+      const cart = newCartBase(close.getTime(), form.title.value.trim(), { instapay, instapayLink, wallet });
       const chosen = S.sel.map(id => S.restaurants.find(r => r.id === id)).filter(r => r && reachOf(r).state !== 'far');
       if (!chosen.length) return toast(t('needRest'), 'warn');
       if (chosen.length === 1) Object.assign(cart, snapshotOf(chosen[0]), { stage: 'ordering' });
@@ -3556,6 +3651,67 @@
       if (id) { S.sel = []; go('cart', { id, tab: 'mine' }); }
     }
   };
+
+  /* a fresh order with the admin's usual settings */
+  function newCartBase(closesAt, title, payInfo) {
+    const p = S.profile || {};
+    return {
+      title: title || '', ownerId: me(), ownerName: p.name, ownerPhone: p.phone,
+      createdAt: Date.now(), closesAt,
+      candidates: [], candidateInfo: {}, votes: {}, members: {}, payments: {}, charges: [], roundUp: true,
+      payInfo: payInfo || { instapay: p.instapay || '', instapayLink: p.instapayLink || '', wallet: p.wallet || '' },
+      hostExempt: !!p.hostExempt, hostFee: C.num(p.hostFee) || 0, hostFeeLabel: t('hostFeeLabel'),
+      tqFee: { mode: p.tqFeeMode || 'pct', value: C.num(p.tqFeeValue) || 0 }, tqFeeLabel: t('tqFeeLabel')
+    };
+  }
+  const defaultClose = () => Date.now() + (CFG.defaultCartMinutes || 30) * 60000;
+  let starting = false;
+  async function startCart(cart) {
+    if (starting) return; starting = true;
+    try { const id = await guard(S.store.createCart(S.gid, cart)); if (id) go('cart', { id, tab: 'mine' }); }
+    finally { starting = false; }
+  }
+  Object.assign(actions, {
+    // admin: one tap = the fixed group's order from this restaurant
+    quickStart: el => {
+      const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r || !isAdmin()) return;
+      startCart(Object.assign(newCartBase(defaultClose(), ''), snapshotOf(r), { stage: 'ordering' }));
+    },
+    // member: leave the group's order (tap twice), then pick a restaurant to order alone
+    goSolo: el => {
+      const c = cartById(el.dataset.id); if (!c) return;
+      if (S.confirmKey !== 'solo:' + c.id) { S.confirmKey = 'solo:' + c.id; return render(true); }
+      S.confirmKey = null;
+      const m = memberFor(c, me()); m.status = 'out'; m.items = []; m.done = true; saveMember(c, me(), m);
+      go('home');
+    },
+    backToGroup: el => {
+      const c = cartById(el.dataset.id); if (!c) return;
+      const m = memberFor(c, me()); m.status = 'in'; m.done = false; saveMember(c, me(), m);
+      go('cart', { id: c.id, tab: 'mine' });
+    },
+    soloStart: el => {
+      const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r) return;
+      const p = S.profile || {};
+      const cart = Object.assign(newCartBase(defaultClose(), t('soloMine')), snapshotOf(r), { stage: 'ordering', solo: true, payInfo: {}, tqFee: { mode: 'pct', value: 0 }, hostFee: 0 });
+      cart.members = { [me()]: { name: p.name, phone: p.phone || '', status: 'in', items: [], done: false, at: Date.now() } };
+      startCart(cart);
+    },
+    // admin: same order, same people, another restaurant
+    changeRestOpen: () => { S.route.change = !S.route.change; S.confirmKey = null; render(true); },
+    changeRest: async el => {
+      const c = curCart(), r = S.restaurants.find(x => x.id === el.dataset.id); if (!c || !r || !isHost(c)) return;
+      const ordered = Object.values(c.members || {}).filter(m => (m.items || []).length).length;
+      if (ordered && S.confirmKey !== 'chg:' + r.id) { S.confirmKey = 'chg:' + r.id; return render(true); }
+      const p = Object.assign(snapshotOf(r), { stage: 'ordering', closesAt: Math.max(c.closesAt, Date.now() + 15 * 60000) });
+      // everyone starts over on the new menu (who said "not eating" stays out)
+      const members = {};
+      for (const [k, m] of Object.entries(c.members || {})) members[k] = Object.assign({}, m, { items: [], done: m.status === 'out', at: Date.now() });
+      p.members = members;
+      S.route.change = false; S.confirmKey = null;
+      if (await guardOk(S.store.patchCart(S.gid, c.id, p))) toast(t('restChanged', { r: r.name }));
+    }
+  });
 
   /* ---------- events ---------- */
   document.addEventListener('click', e => {

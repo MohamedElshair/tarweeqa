@@ -806,3 +806,35 @@ html, body { overflow-x: clip; }
 .ed-open { scroll-margin-bottom: 110px; }
 .pick-bar { bottom: calc(env(safe-area-inset-bottom, 0px) + 78px); }
 .page:has(.pick-bar) { padding-bottom: 170px; }
+
+/* sticky "I'm done" reminder (above the bottom bar, on every screen) */
+.nag-bar {
+  position: fixed; inset-inline: 8px; z-index: 31; max-width: 624px; margin-inline: auto;
+  bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 10px;
+  padding: 10px 12px; border-radius: 16px;
+  background: var(--sun-soft, #FFF4D6); color: var(--fg);
+  border: 1.5px solid var(--sun); box-shadow: 0 6px 24px rgba(0,0,0,.18);
+  animation: nag-in .35s ease-out, nag-pulse 2.4s ease-in-out 1s infinite;
+}
+.nag-txt { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1 1 200px; }
+.nag-txt strong { display: block; font-size: .92rem; line-height: 1.25; }
+.nag-txt small { color: var(--muted); font-size: .78rem; }
+.nag-btns { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nag-btns .primary { padding: 10px 16px; font-weight: 700; }
+.page.has-nag { padding-bottom: calc(190px + env(safe-area-inset-bottom, 0px)); }
+@keyframes nag-in { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes nag-pulse { 0%, 100% { box-shadow: 0 6px 24px rgba(0,0,0,.18); } 50% { box-shadow: 0 6px 24px rgba(0,0,0,.18), 0 0 0 4px color-mix(in srgb, var(--sun) 45%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .nag-bar { animation: none; } }
+
+/* one-tap start for the fixed group, and changing the restaurant of an open order */
+.quick-rests { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.quick-rest { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border: 1.5px solid var(--line); border-radius: var(--r-sm, 12px); background: var(--bg); font-weight: 600; font-size: .86rem; text-align: center; }
+.quick-rest .rlogo { width: 44px; height: 44px; }
+.quick-rest:active, .quick-rest.on { border-color: var(--accent); background: var(--accent-soft); }
+.quick-rest.on { border-color: var(--danger); }
+
+/* member: restaurants to order from alone */
+.solo-rests { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.solo-rests li { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm, 12px); }
+.solo-rests .pick-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
