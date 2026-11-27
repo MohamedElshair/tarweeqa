@@ -305,8 +305,8 @@
         const wasMember = c.member;
         c.group = b.group; c.member = !!b.member;
         if (b.member) {
-          for (const r of b.restaurants || []) c.rest.set(r.id, r);
-          for (const x of b.carts || []) c.carts.set(x.id, x);
+          for (const r of b.restaurants || []) c.rest.set(r.id, spell(r));
+          for (const x of b.carts || []) c.carts.set(x.id, spell(x));
           const rIds = new Set(b.restaurantIds || []), cIds = new Set(b.cartIds || []);
           for (const id of Array.from(c.rest.keys())) if (!rIds.has(id)) c.rest.delete(id);
           for (const id of Array.from(c.carts.keys())) if (!cIds.has(id)) c.carts.delete(id);
@@ -468,5 +468,20 @@
     };
   }
 
+
+  /* every item name goes through the spelling fixes (core.js fixSpelling) before it is saved */
+  const spell = d => (window.TarweeqaCore && window.TarweeqaCore.spellData) ? window.TarweeqaCore.spellData(d) : d;
+  for (const K of [LocalStore, CloudStore, SupaStore]) {
+    const P = K.prototype;
+    for (const [fn, at] of [['saveRestaurant', 1], ['patchRestaurant', 2], ['createCart', 1], ['patchCart', 2]]) {
+      if (typeof P[fn] !== 'function') continue;
+      const orig = P[fn];
+      P[fn] = function (...a) { a[at] = spell(a[at]); return orig.apply(this, a); };
+    }
+    if (typeof P.setMember === 'function') {
+      const orig = P.setMember;
+      P.setMember = function (gid, cartId, key, m) { return orig.call(this, gid, cartId, key, spell({ members: { x: m } }).members.x); };
+    }
+  }
   window.TarweeqaStore = { LocalStore, CloudStore, SupaStore, rid, LS, clone };
 })();

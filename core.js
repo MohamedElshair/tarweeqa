@@ -232,6 +232,7 @@
     }
     const seen = new Set();
     const unique = items.filter(it => { const k = it.name + '|' + it.price; if (seen.has(k)) return false; seen.add(k); return true; });
+    unique.forEach(it => { it.name = fixSpelling(it.name); });
     return { items: unique, skipped };
   }
 
@@ -365,6 +366,7 @@
     };
     const svc = fees.find(f => f.kind === 'service');
     if (svc && (out.subtotal || itemsSum)) out.servicePct = Math.round(svc.amount / (out.subtotal || itemsSum) * 1000) / 10;
+    for (const it of items) if (typeof it.name === 'string') it.name = fixSpelling(it.name);
     return out;
   }
 
@@ -405,6 +407,71 @@
     const setB = new Set(B);
     const common = A.filter(w => setB.has(w) || B.some(x => x.length > 3 && (x.startsWith(w) || w.startsWith(x)))).length;
     return common / Math.max(A.length, B.length);
+  }
+
+
+  /* ---------------- Spelling of item names ----------------
+     Every item name is corrected before it is saved or shown: «سندويتش» → «ساندويتش», «معصر» → «معصفر», «جبنه» → «جبنة».
+     Only words listed here change (so a correct «بانيه» is never touched). Add a new fix as one line: 'wrong': 'right'. */
+  const SPELL = {
+    'سندويتش': 'ساندويتش', 'سندوتش': 'ساندويتش', 'ساندوتش': 'ساندويتش', 'سندويش': 'ساندويتش', 'ساندويش': 'ساندويتش',
+    'سندوش': 'ساندويتش', 'ساندوش': 'ساندويتش', 'سنودتش': 'ساندويتش', 'ساندتش': 'ساندويتش',
+    'سندويتشات': 'ساندويتشات', 'سندوتشات': 'ساندويتشات', 'ساندوتشات': 'ساندويتشات', 'سندويشات': 'ساندويتشات',
+    'معصر': 'معصفر', 'مقصفر': 'معصفر', 'معصفره': 'معصفرة', 'معصره': 'معصفرة',
+    'طعميه': 'طعمية', 'جبنه': 'جبنة', 'جبنا': 'جبنة', 'بسطرمه': 'بسطرمة', 'بسطرما': 'بسطرمة', 'شكشوكه': 'شكشوكة',
+    'طحينه': 'طحينة', 'سلطه': 'سلطة', 'كفته': 'كفتة', 'مسقعه': 'مسقعة', 'محمره': 'محمرة', 'بيضه': 'بيضة',
+    'زبده': 'زبدة', 'قشطه': 'قشطة', 'حلاوه': 'حلاوة', 'مربه': 'مربى', 'مربة': 'مربى', 'مربا': 'مربى',
+    'شاورمه': 'شاورما', 'شاورمة': 'شاورما', 'شورما': 'شاورما', 'بطاطه': 'بطاطا', 'بطاطة': 'بطاطا',
+    'مكرونه': 'مكرونة', 'مكرونا': 'مكرونة', 'بشاميل': 'بشاميل', 'فطيره': 'فطيرة', 'كريمه': 'كريمة',
+    'زيتونه': 'زيتونة', 'ليمونه': 'ليمونة', 'قهوه': 'قهوة', 'شوربه': 'شوربة', 'وجبه': 'وجبة', 'اضافه': 'إضافة',
+    'سجق': 'سجق', 'سوسيس': 'سوسيس', 'هوتدوج': 'هوت دوج', 'هوت دوغ': 'هوت دوج',
+    'اومليت': 'أومليت', 'أمليت': 'أومليت', 'امليت': 'أومليت', 'اومليط': 'أومليت',
+    'اسكندراني': 'إسكندراني', 'اسكندرانى': 'إسكندراني', 'كرواسن': 'كرواسون', 'كرواسان': 'كرواسون', 'كرواصون': 'كرواسون',
+    'ببسي': 'بيبسي', 'بيبسى': 'بيبسي', 'فلافيل': 'فلافل', 'مدمز': 'مدمس', 'مايونيز': 'مايونيز', 'مابيونيز': 'مايونيز', 'ماينيز': 'مايونيز',
+    'بابغنوج': 'بابا غنوج', 'باباغنوج': 'بابا غنوج', 'بتنجان': 'باذنجان', 'بدنجان': 'باذنجان', 'رومى': 'رومي', 'بلدى': 'بلدي', 'شامى': 'شامي'
+  };
+  const spellKey = w => String(w).replace(/[ً-ْـ]/g, '').replace(/[إأآ]/g, 'ا');
+  const SPELL_IX = Object.fromEntries(Object.entries(SPELL).map(([a, b]) => [spellKey(a), b]));
+  const SPELL_PRE = ['وبال', 'بال', 'وال', 'لل', 'ال', 'و', 'ب'];
+  function fixWord(w) {
+    const k = spellKey(w);
+    if (SPELL_IX[k]) return SPELL_IX[k];
+    for (const pre of SPELL_PRE) {
+      if (k.length > pre.length + 2 && k.startsWith(pre)) {
+        const rest = SPELL_IX[k.slice(pre.length)];
+        if (rest) return w.slice(0, pre.length) + rest;
+      }
+    }
+    return w;
+  }
+  function fixSpelling(name) {
+    if (name == null || typeof name !== 'string') return name;
+    const s = name.replace(/ـ/g, '').replace(/\s+/g, ' ').trim();
+    // two-word fixes first («هوت دوغ»), then word by word
+    let out = s;
+    for (const [a, b] of Object.entries(SPELL)) if (a.includes(' ') && out.includes(a)) out = out.split(a).join(b);
+    return out.split(' ').map(fixWord).join(' ');
+  }
+  const fixList = list => Array.isArray(list) ? list.map(it => {
+    if (!it || typeof it !== 'object') return it;
+    const x = Object.assign({}, it);
+    if (typeof x.name === 'string') x.name = fixSpelling(x.name);
+    if (typeof x.category === 'string') x.category = fixSpelling(x.category);
+    if (Array.isArray(x.opts)) x.opts = x.opts.map(o => o && typeof o.n === 'string' ? Object.assign({}, o, { n: fixSpelling(o.n), g: typeof o.g === 'string' ? fixSpelling(o.g) : o.g }) : o);
+    if (Array.isArray(x.choices)) x.choices = fixList(x.choices);
+    return x;
+  }) : list;
+  function fixMember(m) { return m && typeof m === 'object' && Array.isArray(m.items) ? Object.assign({}, m, { items: fixList(m.items) }) : m; }
+  // a restaurant, a cart, or a patch for either: only item names, categories and option names change — never people's or restaurants' names
+  function spellData(d) {
+    if (!d || typeof d !== 'object') return d;
+    const x = Object.assign({}, d);
+    for (const k of Object.keys(x)) {
+      if (k === 'items' || k === 'shared' || k === 'optGroups' || /\.items$/.test(k)) x[k] = fixList(x[k]);
+      else if (k === 'members' && x[k] && typeof x[k] === 'object') x[k] = Object.fromEntries(Object.entries(x[k]).map(([a, m]) => [a, fixMember(m)]));
+      else if (/^members\.[^.]+$/.test(k)) x[k] = fixMember(x[k]);
+    }
+    return x;
   }
 
   /* ---------------- Orders ---------------- */
@@ -737,7 +804,7 @@
     return { km: round2(km), limit, state: km <= limit ? 'near' : 'far' };
   }
 
-  const api = { normPhone, isEgMobile, localMobile, groupsFor, optText, optDelta, itemNote, pickOptions, optKey, distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, autoCategory, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
+  const api = { fixSpelling, spellData, SPELL, normPhone, isEgMobile, localMobile, groupsFor, optText, optDelta, itemNote, pickOptions, optKey, distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, autoCategory, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TarweeqaCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,6 +1,6 @@
 /* ترويقة — service worker: يخلي البرنامج يفتح بسرعة ويتثبت على الموبايل
    Caches the app shell only. Live cart data always comes from Firebase. */
-const CACHE = 'tarweeqa-2611271850';
+const CACHE = 'tarweeqa-2611271913';
 const SHELL = ['./', 'index.html', 'styles.css', 'config.js', 'i18n.js', 'core.js', 'store.js', 'places.js', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'favicon.ico'];
 
 self.addEventListener('install', e => {
