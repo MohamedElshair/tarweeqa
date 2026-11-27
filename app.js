@@ -272,8 +272,7 @@
         </div>
       </header>
       ${demo ? `<div class="demo-bar">${acting}<p>${esc(t('demoNote'))}</p></div>` : ''}
-      <main class="page${nagCart() ? ' has-nag' : ''}">${body}</main>
-      ${nagBar()}
+      ${(() => { const bar = nagBar(); return `<main class="page${bar ? ' has-nag' : ''}">${body}</main>${bar}`; })()}
       <nav class="bottom-nav">
         ${tab('home', icoHome(), t('navHome'))}
         ${isSiteAdmin() ? tab('admin', icoShield(), t('navAdmin')) : isAdmin() ? tab('restaurants', icoMenu(), t('navRestaurants')) : ''}
@@ -284,11 +283,18 @@
 
   /* the sticky reminder: stays on every screen until I press "I'm done" (or say I'm not eating) */
   function nagBar() {
+    // admin work screens (menus, restaurants, the admin page): no bar, it covers Save and pulls the eye away
+    if (ADMIN_ROUTES.includes(S.route.name) || S.route.name === 'admin') { document.title = (nagCart() ? '(!) ' : '') + t('appName'); return ''; }
+    // on an open order's own page: the quiet basket bar, always there (empty, picking, or confirmed)
+    const rc = S.route.name === 'cart' ? cartById(S.route.id) : null;
+    if (rc && stageOf(rc) === 'ordering' && people(rc)[me()] && personStatus(rc, me()) !== 'out'
+        && (rc.closesAt - Date.now() > 10 * 60000 || personStatus(rc, me()) === 'done')) {
+      document.title = (nagCart() ? '(!) ' : '') + t('appName');
+      return basketBar(rc);
+    }
     const c = nagCart();
     if (!c) { document.title = t('appName'); return ''; }
     document.title = '(!) ' + t('appName');
-    // admin work screens (menus, restaurants, the admin page): no bar, it covers Save and pulls the eye away
-    if (ADMIN_ROUTES.includes(S.route.name) || S.route.name === 'admin') return '';
     const st = personStatus(c, me());
     const m = (c.members || {})[me()] || {};
     const has = (m.items || []).length > 0;
@@ -296,15 +302,6 @@
     document.title = '(!) ' + t('appName');
     const onCart = S.route.name === 'cart' && S.route.id === c.id;
     const left = c.closesAt - Date.now();
-    // still picking on the order page: no nagging, just a quiet basket bar (the yellow reminder only when away, or in the last 10 minutes)
-    if (onCart && left > 10 * 60000) {
-      if (!has) return '';
-      const n = (m.items || []).reduce((x, i) => x + C.num(i.qty), 0);
-      return `<aside class="nag-bar calm">
-        <button class="calm-basket tnum" data-act="basketOpen" data-id="${esc(c.id)}" data-key="${esc(me())}"><span class="cb-ico">🧺</span><span><strong>${esc(t('basketTitle'))} · ${esc(t('basketCount', { n }))}</strong><small>≈ ${esc(money(C.estimateFor(c, me()).total))}</small></span></button>
-        <button class="primary" data-act="doneFor" data-id="${esc(c.id)}">${esc(t('nagDone'))}</button>
-      </aside>`;
-    }
     return `<aside class="nag-bar" role="status" aria-live="polite">
       <div class="nag-txt">${restLogo(c, rest, 'sm')}<span><strong>${esc(st === 'picking' ? t('nagPicking', { rest }) : t('nagNone', { rest }))}</strong>
         <small class="tnum">${esc(t('nagUntil', { t: fmtTime(c.closesAt) }))} · <span data-countdown="${c.closesAt}"></span></small></span></div>
@@ -314,6 +311,19 @@
               : `${onCart ? '' : `<button class="primary" data-act="openCart" data-id="${esc(c.id)}">${esc(t('nagOrder'))}</button>`}${c.solo ? '' : `<button class="ghost small" data-act="skipFor" data-id="${esc(c.id)}">${esc(t('nagSkip'))}</button>`}`}
         ${has && !onCart ? `<button class="ghost small" data-act="openCart" data-id="${esc(c.id)}">${esc(t('nagFinish'))}</button>` : ''}
       </div>
+    </aside>`;
+  }
+
+  function basketBar(c) {
+    const m = (c.members || {})[me()] || {};
+    const items = m.items || [];
+    const n = items.reduce((x, i) => x + C.num(i.qty), 0);
+    const done = personStatus(c, me()) === 'done';
+    if (!n) return `<aside class="nag-bar calm"><div class="calm-basket"><span class="cb-ico">🧺</span><span><strong>${esc(t('basketEmpty'))}</strong><small>${esc(t('basketEmptyHint'))}</small></span></div></aside>`;
+    return `<aside class="nag-bar calm${done ? ' is-done' : ''}">
+      <button class="calm-basket tnum" data-act="basketOpen" data-id="${esc(c.id)}" data-key="${esc(me())}"><span class="cb-ico">${done ? '✅' : '🧺'}</span><span><strong>${esc(done ? t('basketDone') : t('basketTitle'))} · ${esc(t('basketCount', { n }))}</strong><small>≈ ${esc(money(C.estimateFor(c, me()).total))}</small></span></button>
+      ${done ? `<button class="secondary" data-act="basketOpen" data-id="${esc(c.id)}" data-key="${esc(me())}">${esc(t('basketView'))}</button>`
+             : `<button class="primary" data-act="doneFor" data-id="${esc(c.id)}">${esc(t('nagDone'))}</button>`}
     </aside>`;
   }
 
@@ -2541,6 +2551,10 @@
     qty: el => {
       const c = curCart(), key = actKey(c), m = memberFor(c, key);
       const it = m.items.find(i => i.id === el.dataset.id); if (!it) return;
+      if (+el.dataset.d > 0 && it.menuId) {
+        const mi = (c.menu || []).find(x => x.id === it.menuId);
+        if (mi && C.groupsFor(mi, c.optGroups).length) return actions.pickOpts({ dataset: { id: mi.id } });
+      }
       it.qty = C.num(it.qty) + (+el.dataset.d);
       if (it.qty <= 0) m.items = m.items.filter(i => i.id !== it.id);
       m.done = false;

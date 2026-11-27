@@ -1002,3 +1002,8 @@ html, body { overflow-x: clip; }
 .calm-basket strong { display: block; font-size: .92rem; }
 .calm-basket small { color: var(--muted); font-size: .82rem; }
 .page.has-nag:has(+ .nag-bar.calm) { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+/* the basket bar stays still: no slide-in on every redraw */
+.nag-bar.calm, .nag-bar.calm.is-done { animation: none; }
+.nag-bar.calm.is-done { border-color: var(--accent); }
+.nag-bar { animation-name: none; }
+.nag-bar:not(.calm) { animation: nag-pulse 2.4s ease-in-out 1s infinite; }

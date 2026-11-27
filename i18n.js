@@ -1,6 +1,7 @@
 /* ترويقة — النصوص (UI text, Arabic + English) — v2 */
 window.TARWEEQA_I18N = {
   ar: {
+    basketEmpty: 'سلتك فاضية', basketEmptyHint: 'اختار من المنيو تحت', basketDone: 'طلبك اتأكد',
     basketTitle: 'سلتي', basketOf: 'سلة {name}', basketCount: '{n} صنف', basketView: 'السلة', basketAsk: 'راجع طلبك كويس قبل ما تأكد — ده اللي هيتطلب ليك بالظبط:', basketAskOther: 'راجع طلب {name} قبل التأكيد:',
     basketEstTotal: 'حسابك التقريبي', basketConfirm: 'تمام، طلبي مظبوط — أكّد', basketFix: 'لأ، عايز أعدّل', basketEditBtn: 'عدّل طلبي',
     estDisclaimer: 'الحساب ده استرشادي بس. الحساب الفعلي هيوصلك في رسالة على الواتساب أو في بروفايلك على ترويقة بعد قفل الطلب (بعد إضافة التوصيل والضرايب والخدمة الحقيقية).',
@@ -294,6 +295,7 @@ window.TARWEEQA_I18N = {
   },
 
   en: {
+    basketEmpty: 'Your basket is empty', basketEmptyHint: 'Pick from the menu below', basketDone: 'Order confirmed',
     basketTitle: 'My basket', basketOf: "{name}'s basket", basketCount: '{n} items', basketView: 'Basket', basketAsk: 'Check your order before confirming — this is exactly what will be ordered for you:', basketAskOther: "Check {name}'s order before confirming:",
     basketEstTotal: 'Your estimated total', basketConfirm: 'Looks right — confirm', basketFix: 'No, let me change it', basketEditBtn: 'Edit my order',
     estDisclaimer: 'This total is only an estimate. Your actual bill reaches you by WhatsApp or in your Tarweeqa profile after the order closes (with the real delivery, tax and service).',
