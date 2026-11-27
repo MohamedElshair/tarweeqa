@@ -9,6 +9,7 @@
 
   const S = {
     lang: LS.get('tarweeqa.lang') || 'ar',
+    theme: LS.get('tarweeqa.theme') || 'auto',
     store: null, profile: null,
     gid: null, group: null, groups: [], restaurants: [], carts: [],
     route: { name: 'home' },
@@ -259,7 +260,7 @@
         <div class="top-actions">
           ${demo ? `<span class="chip chip-demo">${esc(t('demoChip'))}</span>` : ''}
           <button class="ghost small" data-act="lang">${esc(t('langSwitch'))}</button>
-          <button class="avatar" data-act="nav" data-to="profile" aria-label="${esc(t('profile'))}">${esc(initial(S.profile.name))}</button>
+          <button class="avatar${S.profile.photo ? ' has-photo' : ''}" data-act="nav" data-to="profile" aria-label="${esc(t('profile'))}">${S.profile.photo ? `<img src="${esc(S.profile.photo)}" alt="">` : esc(initial(S.profile.name))}</button>
         </div>
       </header>
       ${demo ? `<div class="demo-bar">${acting}<p>${esc(t('demoNote'))}</p></div>` : ''}
@@ -348,7 +349,7 @@
         <button class="primary block" type="submit">${esc(t('authSignupBtn'))}</button>
       </form>`;
     else form = `<form class="panel form" data-submit="authPhone" novalidate>
-        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="a-phone" name="phone" type="tel" inputmode="tel" dir="ltr" autocomplete="tel" placeholder="01012345678" value="${phone}"><small>${esc(t('phoneOnlyHint'))}</small></label>
+        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="a-phone" name="phone" type="tel" inputmode="tel" dir="ltr" autocomplete="tel" placeholder="01xxxxxxxxx" maxlength="20" value="${phone}"><small>${esc(t('phoneOnlyHint'))}</small></label>
         ${err}
         <button class="primary block" type="submit">${esc(t('continueBtn'))}</button>
       </form>`;
@@ -1744,41 +1745,75 @@
   function viewProfile() {
     const p = S.profile;
     const cloud = !isLocal();
-    return `<h1>${esc(t('profile'))}</h1>
+    const th = S.theme || 'auto';
+    const seg = (act, key, cur, opts) => `<div class="seg small" role="group">${opts.map(([v, l]) => `<button class="${cur === v ? 'on' : ''}" aria-pressed="${cur === v}" data-act="${act}" data-${key}="${v}">${esc(l)}</button>`).join('')}</div>`;
+    const ph = cloud ? localPhone(p.phone) : p.phone;
+    return `<h1 class="sr-only">${esc(t('profile'))}</h1>
+      <section class="me-card">
+        <div class="me-photo">
+          ${meAvatar('me-pic')}
+          <label class="me-cam" title="${esc(t('photoChange'))}">
+            <input type="file" accept="image/*" class="sr-only" data-change="myPhoto" aria-label="${esc(p.photo ? t('photoChange') : t('photoAdd'))}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          </label>
+        </div>
+        <div class="me-info">
+          <p class="me-name">${esc(p.name)}</p>
+          ${ph ? `<p class="me-phone tnum" dir="ltr">${esc(ph)}</p>` : ''}
+          ${S.group ? `<p class="me-group">${esc(S.group.name)}</p>` : ''}
+          <div class="me-photo-acts">
+            <label class="ghost small file-btn"><input type="file" accept="image/*" class="sr-only" data-change="myPhoto">${esc(p.photo ? t('photoChange') : t('photoAdd'))}</label>
+            ${p.photo ? `<button class="ghost small" data-act="removePhoto">${esc(t('photoRemove'))}</button>` : ''}
+          </div>
+        </div>
+      </section>
       ${cloud ? viewHistory() : ''}
-      <form class="panel form" data-submit="profile" novalidate>
-        <label class="field"><span>${esc(t('yourName'))}</span><input id="p-name" name="name" value="${esc(p.name)}"></label>
-        <label class="field"><span>${esc(t('yourPhone'))}</span><input id="p-phone" name="phone" type="tel" dir="ltr" value="${esc(p.phone)}"${cloud ? ` readonly aria-describedby="p-phone-note"` : ''}>${cloud ? `<small id="p-phone-note">${esc(t('phoneIsAccount'))}</small>` : ''}</label>
-        <div class="grid2">
-          <label class="field"><span>${esc(t('instapayAny'))}</span><input id="p-insta" name="instapay" dir="ltr" value="${esc(instaValue(p))}" placeholder="name@instapay / https://ipn.eg/…"></label>
-          <label class="field"><span>${esc(t('wallet'))}</span><input id="p-wallet" name="wallet" type="tel" dir="ltr" value="${esc(p.wallet || '')}"></label>
+      <h2 class="set-title">${esc(t('settings'))}</h2>
+      <section class="panel set-list">
+        <div class="set-row"><span class="set-lbl">${esc(t('theme'))}<small class="muted">${esc(th === 'auto' ? t('themeAutoHint') : '')}</small></span>${seg('setTheme', 'theme', th, [['auto', t('themeAuto')], ['light', t('themeLight')], ['dark', t('themeDark')]])}</div>
+        <div class="set-row"><span class="set-lbl">${esc(t('language'))}</span>${seg('setLang', 'lang', S.lang, [['ar', 'العربية'], ['en', 'English']])}</div>
+      </section>
+      <details class="panel set-det">
+        <summary>${esc(t('myDetailsPay'))}</summary>
+        <form class="form" data-submit="profile" novalidate>
+          <label class="field"><span>${esc(t('yourName'))}</span><input id="p-name" name="name" value="${esc(p.name)}"></label>
+          <label class="field"><span>${esc(t('yourPhone'))}</span><input id="p-phone" name="phone" type="tel" dir="ltr" value="${esc(ph)}"${cloud ? ` readonly aria-describedby="p-phone-note"` : ''}>${cloud ? `<small id="p-phone-note">${esc(t('phoneIsAccount'))}</small>` : ''}</label>
+          <div class="grid2">
+            <label class="field"><span>${esc(t('instapayAny'))}</span><input id="p-insta" name="instapay" dir="ltr" value="${esc(instaValue(p))}" placeholder="name@instapay / https://ipn.eg/…"></label>
+            <label class="field"><span>${esc(t('wallet'))}</span><input id="p-wallet" name="wallet" type="tel" dir="ltr" value="${esc(p.wallet || '')}" placeholder="01xxxxxxxxx"></label>
+          </div>
+          <p class="form-error" id="p-err" hidden></p>
+          <button class="primary block" type="submit">${esc(t('save'))}</button>
+        </form>
+      </details>
+      <details class="panel set-det">
+        <summary>${esc(t('hostOptsProfile'))}</summary>
+        <div class="form">
+          <p class="muted small-text">${esc(t('hostOptsProfileHint'))}</p>
+          <label class="check"><input type="checkbox" id="ph-exempt" data-change="profHostExempt" ${p.hostExempt ? 'checked' : ''}><span>${esc(t('hostExemptLbl'))}</span></label>
+          <label class="field inline-field"><span>${esc(t('hostFeeLbl'))}</span><input id="ph-fee" class="tnum" inputmode="decimal" data-change="profHostFee" value="${C.num(p.hostFee) ? esc(p.hostFee) : ''}" placeholder="0"></label>
         </div>
-        <p class="form-error" id="p-err" hidden></p>
-        <button class="primary block" type="submit">${esc(t('save'))}</button>
-      </form>
-      <section class="panel form">
-        <p class="label">👤 ${esc(t('hostOptsProfile'))}</p>
-        <p class="muted small-text">${esc(t('hostOptsProfileHint'))}</p>
-        <label class="check"><input type="checkbox" id="ph-exempt" data-change="profHostExempt" ${p.hostExempt ? 'checked' : ''}><span>${esc(t('hostExemptLbl'))}</span></label>
-        <label class="field inline-field"><span>${esc(t('hostFeeLbl'))}</span><input id="ph-fee" class="tnum" inputmode="decimal" data-change="profHostFee" value="${C.num(p.hostFee) ? esc(p.hostFee) : ''}" placeholder="0"></label>
-      </section>
-      <section class="panel">
-        <p class="label">${esc(t('language'))}</p>
-        <div class="btn-row"><button class="${S.lang === 'ar' ? 'primary' : 'secondary'}" data-act="setLang" data-lang="ar">العربية</button><button class="${S.lang === 'en' ? 'primary' : 'secondary'}" data-act="setLang" data-lang="en">English</button></div>
-      </section>
+      </details>
       ${isLocal() ? `<button class="danger-ghost" data-act="resetDemo">${esc(S.confirmKey === 'reset' ? t('confirmAgain') : t('resetDemo'))}</button>` : `
-      <form class="panel form" data-submit="changePin" novalidate>
-        <p class="label">🔒 ${esc(t('pinChangeTitle'))}</p>
-        <div class="grid2">
-          <label class="field"><span>${esc(t('pinOld'))}</span>${pinInput('c-old', 'old', 'current-password')}</label>
-          <label class="field"><span>${esc(t('pinNew'))}</span>${pinInput('c-pin', 'pin', 'new-password')}</label>
-        </div>
-        <p class="form-error" id="c-err" hidden></p>
-        <button class="secondary" type="submit">${esc(t('pinChangeBtn'))}</button>
-      </form>
+      <details class="panel set-det">
+        <summary>${esc(t('pinChangeTitle'))}</summary>
+        <form class="form" data-submit="changePin" novalidate>
+          <div class="grid2">
+            <label class="field"><span>${esc(t('pinOld'))}</span>${pinInput('c-old', 'old', 'current-password')}</label>
+            <label class="field"><span>${esc(t('pinNew'))}</span>${pinInput('c-pin', 'pin', 'new-password')}</label>
+          </div>
+          <p class="form-error" id="c-err" hidden></p>
+          <button class="secondary" type="submit">${esc(t('pinChangeBtn'))}</button>
+        </form>
+      </details>
       ${isSiteAdmin() ? `<button class="secondary block" data-act="nav" data-to="admin">${icoShield()} ${esc(t('adminTitle'))}</button>` : ''}
-      <button class="danger-ghost" data-act="logout">${esc(t('logout'))}</button>
-      <p class="muted small-text">${esc(t('logoutHint'))}</p>`}`;
+      <button class="logout-btn block" data-act="logout"><svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> ${esc(t('logout'))}</button>
+      <p class="muted small-text center-txt">${esc(t('logoutHint'))}</p>`}`;
+  }
+  // my picture, or the first letter of my name
+  function meAvatar(cls) {
+    const p = S.profile || {};
+    return `<span class="${cls}" aria-hidden="true">${p.photo ? `<img src="${esc(p.photo)}" alt="">` : esc(initial(p.name || ''))}</span>`;
   }
 
   /* ---------- admin page (site admin only) ---------- */
@@ -2052,7 +2087,7 @@
             <small class="muted">${esc(h.createdAt ? fmtDate(h.createdAt) : '')}${S.groups.length > 1 ? ' · ' + esc(h.groupName || '') : ''}</small>
             ${items.length ? `<small class="muted hist-items">${esc(items.slice(0, 3).join(comma()))}${items.length > 3 ? '…' : ''}</small>` : ''}</span>
           <span class="hist-side"><b class="tnum">${esc(amt)}</b>${chip(r)}${note ? `<small class="muted tnum">${esc(note)}</small>` : ''}</span>
-          ${c && r.st !== 'out' ? `<span class="hist-cmp"><span class="hist-bar" aria-hidden="true"><i class="t-${tone(r.st)}" style="width:${Math.max(3, Math.round(c / max * 100))}%"></i></span>${delta(r)}${canOpen ? `<small class="muted">${esc(t('viewInvoice'))} ›</small>` : ''}</span>` : ''}
+          ${c && h.invoice ? `<span class="hist-cmp"><span class="hist-bar" aria-hidden="true"><i class="t-${tone(r.st)}" style="width:${Math.max(3, Math.round(c / max * 100))}%"></i></span>${delta(r)}${canOpen ? `<small class="muted">${esc(t('viewInvoice'))} ›</small>` : ''}</span>` : ''}
         </button></li>`;
       }).join('')}</ul>` : `<p class="empty small">${esc(filter === 'unpaid' ? t('youOweNothing') : t('noOrders'))}</p>`}
     </section>`;
@@ -2277,6 +2312,8 @@
     },
     lang: () => setLang(S.lang === 'ar' ? 'en' : 'ar'),
     setLang: el => setLang(el.dataset.lang),
+    setTheme: el => setTheme(el.dataset.theme),
+    removePhoto: () => saveMyPhoto(''),
     openCart: el => go('cart', { id: el.dataset.id, tab: el.dataset.tab || 'mine' }),
     tab: el => { S.route.tab = el.dataset.tab; render(true); },
     copy: el => copyText(el.dataset.text),
@@ -3131,11 +3168,11 @@
   }
   // one light JPEG of the screenshot(s), stacked, to keep with the receipt
   // logo: square, 160px, centred crop, small JPEG kept with the restaurant (~10 KB)
-  async function logoImage(file) {
+  async function logoImage(file, S0 = 160) {
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-      const S0 = 160, side = Math.min(img.naturalWidth, img.naturalHeight);
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
       const c = document.createElement('canvas'); c.width = S0; c.height = S0;
       const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, S0, S0);
       x.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, S0, S0);
@@ -3624,6 +3661,20 @@
   }
   function syncNewOrder() { /* selections live in S.sel; nothing else to keep */ }
 
+  // theme: 'auto' follows the phone's light/dark setting; 'light' / 'dark' are fixed. Kept on this device.
+  function applyTheme() {
+    const v = S.theme, r = document.documentElement;
+    if (v === 'light' || v === 'dark') r.dataset.theme = v; else delete r.dataset.theme;
+    const dark = v === 'dark' || (v !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = dark ? '#1A120D' : '#E5432D';
+  }
+  function setTheme(v) { S.theme = ['light', 'dark'].includes(v) ? v : 'auto'; LS.set('tarweeqa.theme', S.theme); applyTheme(); render(true); }
+  function saveMyPhoto(photo) {
+    S.profile = Object.assign({}, S.profile, { photo });
+    if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
+    if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(S.profile.name, { photo }));
+    render(true); toast(t(photo ? 'photoSaved' : 'photoRemoved'));
+  }
   function setLang(l) { S.lang = l === 'en' ? 'en' : 'ar'; LS.set('tarweeqa.lang', S.lang); render(true); }
 
   const changes = {
@@ -3684,6 +3735,13 @@
     payInfo: el => patch(curCart(), { ['payInfo.' + el.dataset.k]: el.value.trim() }),
     payInfoInsta: el => { const v = splitInsta(el.value); patch(curCart(), { 'payInfo.instapay': v.instapay, 'payInfo.instapayLink': v.instapayLink }); },
     shots: el => readScreenshots(Array.from(el.files || [])),
+    myPhoto: async el => {
+      const f = el.files && el.files[0]; if (!f) return;
+      let photo;
+      try { photo = await logoImage(f, 200); } catch (e) { console.warn(e); return toast(t('photoFail'), 'warn'); }
+      el.value = '';
+      saveMyPhoto(photo);
+    },
     logo: async el => {
       const f = el.files && el.files[0]; if (!f || !S.draft) return;
       try { syncDraft(); S.draft.logo = await logoImage(f); render(true); toast(t('logoReady')); }
@@ -3787,9 +3845,13 @@
       runPlaces(form.dataset.for, q, false);
     },
     authPhone: async form => {
-      const phone = form.phone.value.trim();
+      // any way of writing the number lands on the same account: +20…, 0020…, 020…, 01…
+      const raw = form.phone.value.trim();
+      const test = isTestPhone(raw);
+      const phone = test ? raw.replace(/\D/g, '') : C.localMobile(raw);
       S.authPhone = phone; S.authMsg = null;
-      if (!C.isValidPhone(phone) && !isTestPhone(phone)) return showErr('#w-err', t('errPhone'));
+      if (!test && !C.isEgMobile(raw)) { S.authPhone = raw; return showErr('#w-err', t('errPhone')); }
+      form.phone.value = phone;
       const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
       let st = null;
       try { st = await S.store.checkPhone(phone); } catch (e) { console.warn(e); if (btn) btn.disabled = false; return showErr('#w-err', t('errWrite')); }
@@ -4135,6 +4197,8 @@
   }
 
   async function boot() {
+    applyTheme();
+    if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); (mq.addEventListener ? mq.addEventListener('change', applyTheme) : mq.addListener && mq.addListener(applyTheme)); }
     render(true);
     try {
       if (CFG.supabase && CFG.supabase.url) {
