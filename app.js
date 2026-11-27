@@ -278,6 +278,9 @@
   function nagBar() {
     const c = nagCart();
     if (!c) { document.title = t('appName'); return ''; }
+    document.title = '(!) ' + t('appName');
+    // admin work screens (menus, restaurants, the admin page): no bar, it covers Save and pulls the eye away
+    if (ADMIN_ROUTES.includes(S.route.name) || S.route.name === 'admin') return '';
     const st = personStatus(c, me());
     const m = (c.members || {})[me()] || {};
     const has = (m.items || []).length > 0;
