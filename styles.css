@@ -963,3 +963,17 @@ html, body { overflow-x: clip; }
 .logout-btn:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
 .logout-btn .ico { width: 20px; height: 20px; }
 .center-txt { text-align: center; }
+
+/* restaurant editor: item search, Save only when something changed */
+.ed-res { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 10px; }
+.ed-res .secondary { flex: none; }
+.ed-menu .menu-group[hidden], .edit-items li[hidden] { display: none; }
+#ai-dupe { display: block; margin-block: 2px 8px; }
+#ai-dupe[hidden] { display: none; }
+.rest-del { margin-top: 18px; }
+.save-bar.in { animation: sbIn .22s ease-out; }
+.save-bar .primary.ok, .save-bar .primary.ok:disabled { background: var(--ok); border-color: var(--ok); color: var(--bg); opacity: 1; }
+.save-bar.bye { animation: sbOut .3s ease-in forwards; pointer-events: none; }
+@keyframes sbIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes sbOut { to { opacity: 0; transform: translateY(14px); } }
+@media (prefers-reduced-motion: reduce) { .save-bar.in, .save-bar.bye { animation: none; } }

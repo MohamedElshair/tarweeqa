@@ -177,6 +177,11 @@
     document.title = t('appName');
     app.innerHTML = view();
     tick();
+    if (S.route.name === 'restaurant' && S.draft && document.querySelector('.save-bar')) {
+      // the "as it was" copy is taken once the page is on screen, so untouched fields never count as changes
+      if (S.draftBase == null) { syncDraft(); S.draftBase = draftSig(); }
+      applyEdSearch(); saveBarState();
+    }
   }
   function scheduleRender() {
     if (renderQueued) return;
@@ -1584,9 +1589,55 @@
     </button></li>`;
   }
   // swap one item's row in place, without drawing the whole page again (fast with long menus)
+  // Save shows only when something changed since the restaurant was opened or last saved
+  const draftSig = () => S.draft ? JSON.stringify(S.draft) : '';
+  function draftDirty() {
+    if (!S.draft || S.draftBase == null) return false;
+    syncDraft();
+    return draftSig() !== S.draftBase;
+  }
   function saveBarState() {
-    const bar = document.querySelector('.sticky-actions');
-    if (bar) bar.classList.toggle('away', !!S.pickMode);
+    const bar = document.querySelector('.save-bar'); if (!bar) return;
+    const btn = bar.querySelector('[data-act="saveRestaurant"]');
+    bar.classList.remove('bye');
+    if (S.savedFlash || S.saving) {
+      bar.classList.remove('away');
+      btn.classList.toggle('ok', !!S.savedFlash); btn.disabled = true;
+      btn.textContent = S.savedFlash ? '✓ ' + t('savedDone') : t('savingNow');
+      return;
+    }
+    btn.classList.remove('ok'); btn.disabled = false; btn.textContent = t('save');
+    const hide = !!S.pickMode || !draftDirty();
+    if (!hide && bar.classList.contains('away')) { bar.classList.remove('in'); void bar.offsetWidth; bar.classList.add('in'); }
+    bar.classList.toggle('away', hide);
+  }
+  // search the restaurant's own items (to check before adding a new one)
+  const sKey = v => C.latinDigits(String(v || '').toLowerCase()).replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[ًٌٍَُِّْـ]/g, '').replace(/سا?ندو?ي?تش/g, 'سندوتش').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const sHit = (name, q) => { const k = sKey(name); return sKey(q).split(' ').filter(Boolean).every(w => k.includes(w)); };
+  function applyEdSearch() {
+    const q = (S.edQuery || '').trim();
+    let n = 0;
+    document.querySelectorAll('.edit-items li[data-item]').forEach(li => {
+      const it = S.draft && S.draft.items.find(i => i.id === li.dataset.item);
+      const show = !q || !it || sHit(it.name, q) || S.editItem === it.id;
+      li.hidden = !show; if (show) n++;
+    });
+    document.querySelectorAll('.menu-group').forEach(g => { if (g.closest('.ed-menu')) g.hidden = !g.querySelector('li[data-item]:not([hidden])'); });
+    const tabs = document.querySelector('.ed-menu .cat-tabs'); if (tabs) tabs.hidden = !!q;
+    const res = $('#ed-res');
+    if (res) {
+      res.hidden = !q;
+      if (q) res.innerHTML = n ? `<span class="muted">${esc(t('edFoundN', { n }))}</span>`
+        : `<span>${esc(t('edNoMatch', { q }))}</span> <button class="secondary small" data-act="edAddFromSearch">${plusIcon()} ${esc(t('edAddIt'))}</button>`;
+    }
+  }
+  // while typing a new item's name: say if something like it is already on the menu
+  function aiDupeHint(v) {
+    const el = $('#ai-dupe'); if (!el || !S.draft) return;
+    const q = sKey(v);
+    const hits = q.length >= 3 ? S.draft.items.filter(i => sHit(i.name, v)).slice(0, 3) : [];
+    el.hidden = !hits.length;
+    el.textContent = hits.length ? t('aiDupe', { list: hits.map(i => C.fixSpelling(i.name) + ' (' + C.fmtMoney(i.price) + ')').join(' · ') }) : '';
   }
   function redrawItem(id) {
     const li = document.querySelector(`.edit-items li[data-item="${CSS.escape(id)}"]`);
@@ -1594,7 +1645,7 @@
     if (!li || !it) return false;
     const tmp = document.createElement('ul'); tmp.innerHTML = edItem(it, groupByCategory(S.draft.items), S.draft);
     const nu = tmp.firstElementChild; li.replaceWith(nu);
-    saveBarState();
+    applyEdSearch(); saveBarState();
     if (S.editItem === id) setTimeout(() => nu.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 30);
     return true;
   }
@@ -1720,11 +1771,13 @@
       </details>
 
       ${optGroupsPanel(d)}
-      <section>
+      <section class="ed-menu">
         <div class="section-head"><h2>${esc(t('menu'))} <small class="muted">${esc(t('itemsCount', { n: d.items.length }))}</small></h2>
           ${d.items.length && S.history[d.name] ? movesSummary(d) : ''}
           ${d.items.length ? `<button class="ghost small" data-act="clearMenu">${esc(S.confirmKey === 'clearMenu' ? t('confirmAgain') : t('clearMenu'))}</button>` : ''}</div>
         ${d.items.length ? `<div class="sort-bar"><div class="btn-row tight"><button class="secondary small" data-act="autoSortMenu">🗂 ${esc(S.confirmKey === 'autoSort' ? t('confirmAgain') : t('autoSort'))}</button><button class="${S.pickMode ? 'primary' : 'secondary'} small" data-act="pickStart">☑️ ${esc(t('pickSome'))}</button></div><small class="muted">${esc(t('autoSortHint'))}</small></div>` : ''}
+        ${d.items.length ? `<input type="search" id="ed-search" class="search" data-input="edSearch" placeholder="${esc(t('edSearchPh'))}" value="${esc(S.edQuery || '')}" autocomplete="off">
+        <p class="ed-res small-text" id="ed-res" hidden></p>` : ''}
         ${catTabs(cats, 'ec')}
         ${pickBar()}
         ${d.items.length ? cats.map((g, gi) => `<div class="menu-group" id="ec-${gi}">
@@ -1732,18 +1785,19 @@
             <ul class="edit-items">${g.items.map(it => edItem(it, cats, d)).join('')}</ul></div>`).join('') : `<p class="empty">${esc(t('menuEmpty'))}</p>`}
         <form class="panel form add-item" data-submit="draftAddItem" novalidate>
           <div class="grid3">
-            <label class="field"><span>${esc(t('itemName'))}</span><input id="ai-name" name="name"></label>
+            <label class="field"><span>${esc(t('itemName'))}</span><input id="ai-name" name="name" data-input="aiName" autocomplete="off"></label>
             <label class="field"><span>${esc(t('price'))}</span><input id="ai-price" name="price" inputmode="decimal" class="tnum"></label>
             <label class="field"><span>${esc(t('categoryOpt'))}</span><input id="ai-cat" name="category" list="cat-list" value="${esc(S._lastCat || '')}"></label>
           </div>
+          <small class="warn-text" id="ai-dupe" hidden></small>
           <datalist id="cat-list">${cats.filter(g => g.name).map(g => `<option value="${esc(g.name)}"></option>`).join('')}</datalist>
           <button class="secondary" type="submit">${plusIcon()} ${esc(t('addItem'))}</button>
         </form>
       </section>
 
-      <div class="sticky-actions${S.pickMode ? ' away' : ''}">
-        <button class="primary block" data-act="saveRestaurant">${esc(t('save'))}</button>
-        ${d.id ? `<button class="danger-ghost" data-act="deleteRestaurant">${esc(S.confirmKey === 'delRest' ? t('confirmAgain') : t('deleteRest'))}</button>` : ''}
+      ${d.id ? `<div class="rest-del"><button class="danger-ghost block" data-act="deleteRestaurant">${esc(S.confirmKey === 'delRest' ? t('confirmAgain') : t('deleteRest'))}</button></div>` : ''}
+      <div class="sticky-actions save-bar${S.savedFlash || S.saving || (!S.pickMode && S.draftBase != null && draftSig() !== S.draftBase) ? '' : ' away'}">
+        <button class="primary block${S.savedFlash ? ' ok' : ''}" data-act="saveRestaurant"${S.savedFlash || S.saving ? ' disabled' : ''}>${esc(S.savedFlash ? '✓ ' + t('savedDone') : S.saving ? t('savingNow') : t('save'))}</button>
       </div>`;
   }
 
@@ -2243,6 +2297,12 @@
       const prev = S.editItem; S.editItem = el.dataset.id;
       if (!(redrawItem(el.dataset.id) && (!prev || prev === el.dataset.id || redrawItem(prev)))) render(true);
     },
+    edAddFromSearch: () => {
+      const q = (S.edQuery || '').trim(), n = $('#ai-name'); if (!n) return;
+      n.value = C.fixSpelling(q); aiDupeHint(n.value);
+      const f = n.closest('form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => { const pr = $('#ai-price'); if (pr) pr.focus({ preventScroll: true }); }, 350);
+    },
     editItemDone: () => { syncDraft(); const prev = S.editItem; S.editItem = null; if (!prev || !redrawItem(prev)) render(true); saveBarState(); },
     pickStart: () => { syncDraft(); S.pickMode = !S.pickMode; S.picked = new Set(); S.editItem = null; S.confirmKey = null; render(true); },
     pickDone: () => { S.pickMode = false; S.picked = new Set(); render(true); },
@@ -2328,10 +2388,10 @@
     joinGroup: () => joinPending(),
 
     /* restaurants */
-    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', fees: {}, items: [] }; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : from === 'admin' ? 'admin' : 'restaurants' }); },
+    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', fees: {}, items: [] }; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : from === 'admin' ? 'admin' : 'restaurants' }); },
     editRestaurant: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r) return;
-      S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.ocr = null; S.pl = null; S.placeEdit = false;
+      S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false;
       loadHistory(r.name, true); loadReceipts(r.name);
       go('restaurant', { from: S.route.name === 'admin' ? 'admin' : 'restaurants' });
     },
@@ -2390,19 +2450,30 @@
       const ogIds = new Set(d.optGroups.map(g => g.id));
       d.items = d.items.map(({ fresh, oldPrice, ...it }) => { if (it.og) { it.og = it.og.filter(x => ogIds.has(x)); if (!it.og.length) delete it.og; } return it; });
       delete d.priceSource;
-      const id = await guard(S.store.saveRestaurant(S.gid, d));
+      if (S.saving) return;
+      S.saving = true; saveBarState();
+      const id = await guard(S.store.saveRestaurant(S.gid, d)).finally(() => { S.saving = false; });
       S.ocr = null;
       if (id && S.pendingMenu && S.store.saveReceipt) { const pm = S.pendingMenu; S.pendingMenu = null; S.store.saveReceipt(S.gid, Object.assign({ restName: d.name }, pm)).catch(e => console.warn(e)); }
-      if (!id) return;
+      if (!id) return saveBarState();
       // open orders from this restaurant get the new menu and options right away (items people already picked stay as they are)
       const snap = snapshotOf(Object.assign({}, d, { id }));
       const open = S.carts.filter(c => c.restaurantId === id && isOpenStage(stageOf(c)) && isHost(c));
       for (const c of open) guard(S.store.patchCart(S.gid, c.id, { menu: snap.menu, optGroups: snap.optGroups }));
-      toast(open.length ? t('savedOpenToo') : t('saved'));
-      if (S.route.from === 'newOrder') { if (!S.sel.includes(id)) S.sel.push(id); return go('newOrder'); }
-      // stay on the restaurant: there is usually more to edit
+      if (S.route.from === 'newOrder') { toast(open.length ? t('savedOpenToo') : t('saved')); if (!S.sel.includes(id)) S.sel.push(id); return go('newOrder'); }
+      if (open.length) toast(t('savedOpenToo'));
+      // stay on the restaurant: there is usually more to edit. The button says "Saved", then goes away until the next change.
       d.id = id; d.items.forEach(i => { delete i.fresh; delete i.oldPrice; });
+      S.draftBase = null; S.savedFlash = true;
       render(true);
+      const tok = S.savedTok = (S.savedTok || 0) + 1;
+      setTimeout(() => {
+        if (S.savedTok !== tok) return;
+        S.savedFlash = false;
+        const bar = document.querySelector('.save-bar');
+        if (bar && !draftDirty()) { bar.classList.add('bye'); setTimeout(() => { if (S.savedTok === tok && !S.savedFlash) saveBarState(); }, 320); }
+        else saveBarState();
+      }, 1400);
     },
     deleteRestaurant: async () => {
       if (S.confirmKey !== 'delRest') { syncDraft(); S.confirmKey = 'delRest'; return render(true); }
@@ -3659,7 +3730,7 @@
     if (!S.draft) return;
     document.querySelectorAll('[data-draft]').forEach(inp => { S.draft[inp.dataset.draft] = inp.value.trim(); });
     document.querySelectorAll('[data-fee]').forEach(inp => { S.draft.fees[inp.dataset.fee] = C.round2(C.num(inp.value)); });
-    document.querySelectorAll('[data-change="itemName"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && inp.value.trim()) it.name = C.fixSpelling(inp.value.trim()); });
+    document.querySelectorAll('[data-change="itemName"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && inp.value.trim() && inp.value.trim() !== it.name) it.name = C.fixSpelling(inp.value.trim()); });
     document.querySelectorAll('[data-change="itemPrice"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && C.num(inp.value) > 0 && C.round2(C.num(inp.value)) !== C.num(it.price)) { it.price = C.round2(C.num(inp.value)); it.at = Date.now(); } });
     document.querySelectorAll('[data-og]').forEach(inp => {
       const g = draftOg(inp.dataset.og); if (!g) return;
@@ -4147,11 +4218,16 @@
     if (!el) return;
     const fn = changes[el.dataset.change];
     if (fn) fn(el);
+    if (S.route.name === 'restaurant' && S.draft && !el.dataset.input) saveBarState();
   });
   document.addEventListener('input', e => {
     const el = e.target;
     if (!el.dataset) return;
-    if (el.dataset.input === 'search') {
+    // restaurant editor: any change to the restaurant brings Save back; leaving it as it was hides Save again
+    if (S.route.name === 'restaurant' && S.draft && !el.dataset.input && el.closest('#app')) saveBarState();
+    if (el.dataset.input === 'edSearch') { S.edQuery = el.value; applyEdSearch(); }
+    else if (el.dataset.input === 'aiName') aiDupeHint(el.value);
+    else if (el.dataset.input === 'search') {
       S.menuQuery = el.value;
       const q = el.value.trim().toLowerCase();
       let any = false;
