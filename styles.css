@@ -127,6 +127,9 @@ legend, .label { font-family: var(--f-display); font-weight: 600; font-size: .95
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field > span { font-size: .85rem; font-weight: 600; color: var(--muted); }
 .field small { color: var(--muted); font-size: .8rem; }
+.link-row { display: flex; gap: 8px; align-items: stretch; }
+.link-row input { flex: 1; min-width: 0; }
+.link-row a { flex: none; display: inline-flex; align-items: center; text-decoration: none; }
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   width: 100%; min-height: 44px; padding: 9px 12px; border-radius: var(--r-sm);
   border: 1.5px solid var(--line); background: var(--bg);

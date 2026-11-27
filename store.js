@@ -5,7 +5,7 @@
 
    Data:
      groups/{gid}       { name, ownerId, adminIds[], memberUids[], roster{ key:{name,phone,guest?} }, createdAt }
-     groups/{gid}/restaurants/{rid}  { groupId, name, phone, talabatUrl, fees{delivery,service,taxPct,tip}, items[], updatedAt, lastOrderedAt }
+     groups/{gid}/restaurants/{rid}  { groupId, name, phone, talabatUrl, webUrl, fees{delivery,service,taxPct,tip}, items[], updatedAt, lastOrderedAt }
      groups/{gid}/carts/{cid}        { groupId, ownerId, ownerName, ownerPhone, stage, closesAt, createdAt, title,
                           candidates[], candidateInfo{}, votes{},               ← voting
                           restaurantId, restaurant{}, menu[], estimate{},      ← chosen restaurant

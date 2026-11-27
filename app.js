@@ -346,6 +346,11 @@
   function plusIcon() { return `<svg viewBox="0 0 20 20" class="ico" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`; }
   function waIcon() { return `<svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path fill="currentColor" d="M12 2.2a9.7 9.7 0 0 0-8.4 14.6L2.3 21.7l5-1.3A9.7 9.7 0 1 0 12 2.2Zm0 17.7a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 19.9Zm4.4-6c-.2-.1-1.4-.7-1.7-.8-.2-.1-.4-.1-.5.1l-.8.9c-.1.2-.3.2-.5.1a6.6 6.6 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.5-.4h-.5a.9.9 0 0 0-.6.3 2.7 2.7 0 0 0-.9 2c0 1.2.9 2.3 1 2.5.1.2 1.7 2.7 4.2 3.7 1.6.7 2.2.7 3 .6.5-.1 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1l-.5-.4Z"/></svg>`; }
   const wa = (href, label, cls) => `<a class="wa ${cls || 'small'}" href="${esc(href)}" target="_blank" rel="noopener">${waIcon()} ${esc(label)}</a>`;
+  // Restaurant links: accept "facebook.com/x" or a full link; only http(s) is ever opened.
+  const cleanUrl = v => { v = String(v || '').trim(); if (!v) return ''; if (!/^[a-z][a-z0-9+.-]*:/i.test(v)) v = 'https://' + v.replace(/^\/+/, ''); return /^https?:\/\/[^\s/]+\.[^\s]+$/i.test(v) ? v : ''; };
+  const linkField = (id, key, label, val, ph, hint) => { const u = cleanUrl(val); return `<label class="field"><span>${esc(label)}</span><div class="link-row"><input id="${id}" data-draft="${key}" type="url" inputmode="url" dir="ltr" value="${esc(val || '')}" placeholder="${esc(ph)}">${u ? `<a class="secondary small" href="${esc(u)}" target="_blank" rel="noopener">${esc(t('openLink'))} ↗</a>` : ''}</div>${hint ? `<small>${esc(hint)}</small>` : ''}</label>`; };
+  // Links of the order's restaurant: the saved restaurant wins (so a link added later shows on open orders too).
+  const restLinks = c => { const r = Object.assign({}, c.restaurant || {}, (c.restaurantId && S.restaurants.find(y => y.id === c.restaurantId)) || {}); return { talabat: cleanUrl(r.talabatUrl), web: cleanUrl(r.webUrl) }; };
   const back = to => `<div class="crumb"><button class="ghost small" data-act="nav" data-to="${to || 'home'}">‹ ${esc(t('back'))}</button></div>`;
 
   function statusChip(st) {
@@ -1157,6 +1162,7 @@
     if (!agg.lines.length) return `<p class="empty">${esc(t('orderEmpty'))}</p>`;
     const text = orderText(c, agg);
     const r = c.restaurant;
+    const links = restLinks(c);
     return `<section>
       ${st === 'ordering' ? `<p class="banner soft">${esc(t('stillOpenWarn'))}</p>` : ''}
       ${st === 'ordered' || st === 'settled' ? `<p class="banner ok">${esc(t('orderedNote'))}</p>` : ''}
@@ -1178,7 +1184,8 @@
       <div class="btn-row">
         <button class="secondary" data-act="copy" data-text="${esc(text)}">${esc(t('copyOrder'))}</button>
         ${wa(waLink('', text), t('sendOrderWa'), '')}
-        <button class="secondary" data-act="openTalabat">${esc(t('openTalabat'))}</button>
+        ${links.talabat ? `<a class="secondary" href="${esc(links.talabat)}" target="_blank" rel="noopener">${esc(t('openRestTalabat'))} ↗</a>` : `<button class="secondary" data-act="openTalabat">${esc(t('openTalabat'))}</button>`}
+        ${links.web ? `<a class="secondary" href="${esc(links.web)}" target="_blank" rel="noopener">${esc(t('restPage'))} ↗</a>` : ''}
       </div>
       ${r.phone ? `<p class="phone-line"><span>${esc(t('callRest'))}:</span> <a href="tel:${esc(C.latinDigits(r.phone).replace(/[^\d+]/g, ''))}" class="tnum" dir="ltr">${esc(r.phone)}</a></p>` : ''}
       ${host && (st === 'ordering' || st === 'closed') ? `<button class="primary block big" data-act="markOrdered">✓ ${esc(t('markOrdered'))}</button><p class="muted small-text center">${esc(t('markOrderedHint'))}</p>` : ''}
@@ -1911,7 +1918,8 @@
           <label class="field"><span>${esc(t('restPhone'))}</span><input id="r-phone" data-draft="phone" type="tel" dir="ltr" value="${esc(d.phone)}"></label>
           <label class="field"><span>${esc(t('orderVia'))}</span><select id="r-via" data-draft="orderVia">${['phone', 'whatsapp', 'talabat'].map(v => `<option value="${v}"${(d.orderVia || 'talabat') === v ? ' selected' : ''}>${esc(t('via' + v[0].toUpperCase() + v.slice(1)))}</option>`).join('')}</select></label>
         </div>
-        <label class="field"><span>${esc(t('talabatLink'))}</span><input id="r-talabat" data-draft="talabatUrl" type="url" dir="ltr" value="${esc(d.talabatUrl || '')}" placeholder="https://www.talabat.com/egypt/…"></label>
+        ${linkField('r-talabat', 'talabatUrl', t('talabatLink'), d.talabatUrl, 'https://www.talabat.com/egypt/…')}
+        ${linkField('r-web', 'webUrl', t('restLink'), d.webUrl, 'https://…', t('restLinkHint'))}
       </section>
       ${placePanel(d)}
       <section class="panel form">
@@ -2404,7 +2412,7 @@
   function snapshotOf(r) {
     return {
       restaurantId: r.id,
-      restaurant: { name: r.name, phone: r.phone || '', talabatUrl: r.talabatUrl || '', logo: r.logo || '' },
+      restaurant: { name: r.name, phone: r.phone || '', talabatUrl: r.talabatUrl || '', webUrl: r.webUrl || '', logo: r.logo || '' },
       menu: (r.items || []).map(i => { const o = { id: i.id, name: i.name, price: i.price, category: i.category || '' }; const og = C.groupsFor(i, r.optGroups).map(g => g.id); if (og.length) o.og = og; return o; }),
       optGroups: clone((r.optGroups || []).filter(g => (g.choices || []).length && (r.items || []).some(i => (i.og || []).includes(g.id)))),
       estimate: Object.assign({ delivery: 0, service: 0, taxPct: 0, tip: 0 }, r.fees || {})
@@ -2590,7 +2598,7 @@
     joinGroup: () => joinPending(),
 
     /* restaurants */
-    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', fees: {}, items: [] }; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : from === 'admin' ? 'admin' : 'restaurants' }); },
+    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', webUrl: '', fees: {}, items: [] }; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : from === 'admin' ? 'admin' : 'restaurants' }); },
     editRestaurant: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r) return;
       S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false;
@@ -2646,6 +2654,7 @@
       syncDraft();
       const d = S.draft;
       if (!d.name.trim()) return toast(t('errRestName'), 'warn');
+      for (const k of ['talabatUrl', 'webUrl']) { if (d[k] && !cleanUrl(d[k])) return toast(t('badLink'), 'warn'); d[k] = cleanUrl(d[k]); }
       if (PL.available() && !d.id && !d.place) return toast(t('placeNeed'), 'warn');
       if (d.deliveryKm !== undefined) { const km = C.round2(C.num(d.deliveryKm)); if (km > 0) d.deliveryKm = km; else delete d.deliveryKm; }
       d.optGroups = (d.optGroups || []).map(g => Object.assign({}, g, { name: (g.name || '').trim(), choices: (g.choices || []).filter(c => (c.name || '').trim()) })).filter(g => g.name && g.choices.length);
