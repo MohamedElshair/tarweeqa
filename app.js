@@ -3333,8 +3333,19 @@
     </div>`;
   }
 
+  /* the person's confirmed payments to this host, applied oldest invoice first: how much reaches this invoice
+     (same rule as the server's tq_invoice, so a payment recorded "for everything" stamps the older invoices too) */
+  function coveredFor(c, key) {
+    const same = S.carts.filter(x => x.ownerId === c.ownerId && (x.stage === 'ordered' || x.stage === 'settled'));
+    const paid = same.reduce((a, x) => { const p = (x.payments || {})[key]; return a + (p && p.status === 'confirmed' ? C.num(p.amount) : 0); }, 0);
+    const before = same.filter(x => x.createdAt < c.createdAt).reduce((a, x) => a + C.num(((x.invoices || {})[key] || {}).total), 0);
+    const mine = C.num(((c.invoices || {})[key] || {}).total);
+    return C.round2(Math.max(0, Math.min(mine, paid - before)));
+  }
   function invoiceData(c, key) {
-    return { invoice: c.invoices[key], payment: (c.payments || {})[key], restaurant: c.restaurant, title: c.title, createdAt: c.createdAt,
+    return { invoice: c.invoices[key], payment: (c.payments || {})[key], covered: coveredFor(c, key), isHost: key === c.ownerId,
+      lastPayment: S.carts.filter(x => x.ownerId === c.ownerId).map(x => (x.payments || {})[key]).filter(p => p && p.status === 'confirmed').sort((a, b) => (b.at || 0) - (a.at || 0))[0] || null,
+      restaurant: c.restaurant, title: c.title, createdAt: c.createdAt,
       ownerName: c.ownerName, ownerPhone: c.ownerPhone, payInfo: c.payInfo, groupName: S.group && S.group.name, link: invoiceLink(c, key) };
   }
   async function openInvoice(inv) {
@@ -3351,9 +3362,19 @@
     if (V.loading) return `<main class="inv-page"><div class="loading" aria-busy="true"></div></main>`;
     if (V.error || !V.data || !V.data.invoice) return `<main class="inv-page"><p class="empty">${esc(t('invoiceMissing'))}</p></main>`;
     const D = V.data, I = D.invoice, P = D.payment;
-    const paid = P && P.status === 'confirmed' ? C.num(P.amount) : 0;
-    const state = P && P.status === 'reported' ? 'pending' : (paid + 0.009 >= I.net ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'));
-    const stamp = { paid: t('invPaid'), pending: t('invPending'), partial: t('invPartial', { a: C.fmtMoney(paid) }), unpaid: t('invUnpaid') }[state];
+    // paid on this invoice, or covered by payments recorded on later orders (oldest invoice is paid first)
+    const direct = P && P.status === 'confirmed' ? C.num(P.amount) : 0;
+    const covered = D.covered != null ? C.num(D.covered) : null;
+    const isHost = !!(D.isHost || I.self);
+    const full = covered != null && covered + 0.009 >= C.num(I.total);
+    const fromWallet = Math.max(0, C.num(I.total) - C.num(I.net));   // already taken off this invoice
+    const paid = C.round2(Math.max(direct, (covered || 0) - fromWallet));
+    const state = isHost || full || (I.net <= 0.009) ? 'paid'
+      : direct + 0.009 >= I.net ? 'paid'
+      : P && P.status === 'reported' ? 'pending'
+      : paid > 0 ? 'partial' : 'unpaid';
+    const shownPay = P && P.status === 'confirmed' ? P : D.lastPayment;
+    const stamp = isHost ? t('invHostPaid') : { paid: t('invPaid'), pending: t('invPending'), partial: t('invPartial', { a: C.fmtMoney(paid) }), unpaid: t('invUnpaid') }[state];
     const pi = D.payInfo || {};
     const when = new Date(I.issuedAt || D.createdAt);
     const changed = I.items.filter(i => i.prev != null && i.prev !== i.unit);
@@ -3387,7 +3408,7 @@
           ${Math.abs(I.prev) > 0.009 ? `<div class="sub"><dt>${esc(t('rowTotal'))}</dt><dd>${esc(C.fmtMoney(I.total))}</dd></div><div class="${I.prev > 0 ? 'ok' : 'warn'}"><dt>${I.prev > 0 ? '💳 ' : ''}${esc(I.prev > 0 ? t('prevCredit') : t('prevDebt'))}</dt><dd>${I.prev > 0 ? '−' : '+'}${esc(C.fmtMoney(I.prev > 0 ? Math.min(I.prev, I.total) : -I.prev))}</dd></div>${(I.prevItems || []).map(x => `<div class="sub prev-item"><dt>↳ ${esc(prevItemTxt(x))}</dt><dd>${esc(C.fmtMoney(x.due))}</dd></div>`).join('')}${I.prev > I.total + 0.009 ? `<div class="sub prev-item"><dt>${esc(t('walletLeft', { a: C.fmtMoney(C.round2(I.prev - I.total)) }))}</dt><dd></dd></div>` : ''}` : ''}
           <div class="grand"><dt>${esc(t('invDue'))}</dt><dd>${esc(money(I.net))}</dd></div>
         </dl>
-        <div class="inv-stamp ${state}">${esc(stamp)}${P && P.method ? ` · ${esc(t('method_' + P.method))}` : ''}</div>
+        <div class="inv-stamp ${state}">${esc(stamp)}${!isHost && state === 'paid' && shownPay && shownPay.method ? ` · ${esc(t('method_' + shownPay.method))}` : (state === 'pending' && P && P.method ? ` · ${esc(t('method_' + P.method))}` : '')}</div>
         ${(pi.instapay || pi.wallet || pi.instapayLink) && state !== 'paid' ? `<section class="inv-pay">
           <p class="label">${esc(t('payTo', { name: D.ownerName || '' }))}</p>
           ${payButtons(pi, C.round2(Math.max(0, I.net - paid)))}
