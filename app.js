@@ -351,6 +351,8 @@
   const linkField = (id, key, label, val, ph, hint) => { const u = cleanUrl(val); return `<label class="field"><span>${esc(label)}</span><div class="link-row"><input id="${id}" data-draft="${key}" type="url" inputmode="url" dir="ltr" value="${esc(val || '')}" placeholder="${esc(ph)}">${u ? `<a class="secondary small" href="${esc(u)}" target="_blank" rel="noopener">${esc(t('openLink'))} ↗</a>` : ''}</div>${hint ? `<small>${esc(hint)}</small>` : ''}</label>`; };
   // Links of the order's restaurant: the saved restaurant wins (so a link added later shows on open orders too).
   const restLinks = c => { const r = Object.assign({}, c.restaurant || {}, (c.restaurantId && S.restaurants.find(y => y.id === c.restaurantId)) || {}); return { talabat: cleanUrl(r.talabatUrl), web: cleanUrl(r.webUrl) }; };
+  // Where a menu can be read from, in order: the menu link, the Talabat page, then the restaurant's own page.
+  const menuLinks = d => Array.from(new Set(['menuUrl', 'talabatUrl', 'webUrl'].map(k => cleanUrl(d && d[k])).filter(Boolean)));
   const back = to => `<div class="crumb"><button class="ghost small" data-act="nav" data-to="${to || 'home'}">‹ ${esc(t('back'))}</button></div>`;
 
   function statusChip(st) {
@@ -1921,6 +1923,7 @@
         </div>
         ${linkField('r-talabat', 'talabatUrl', t('talabatLink'), d.talabatUrl, 'https://www.talabat.com/egypt/…')}
         ${linkField('r-web', 'webUrl', t('restLink'), d.webUrl, 'https://…', t('restLinkHint'))}
+        ${linkField('r-menu', 'menuUrl', t('menuLink'), d.menuUrl, 'https://…', t('menuLinkHint'))}
       </section>
       ${placePanel(d)}
       <section class="panel form">
@@ -1943,7 +1946,9 @@
       <section class="panel shots">
         <p class="label">${esc(d.items.length ? t('updateTitle') : t('shotsTitle'))}</p>
         <p class="muted small-text">${esc(d.items.length ? t('updateHint') : t('menuShotsHint'))}</p>
-        <label class="primary block file-btn${S.ocr && S.ocr.busy ? ' busy' : ''}">
+        ${menuLinks(d).length ? `<button class="primary block${S.ocr && S.ocr.busy ? ' busy' : ''}" data-act="linkImport"${S.ocr && S.ocr.busy ? ' disabled' : ''}>🔗 ${esc(S.ocr && S.ocr.busy && S.ocr.link ? t('linkBusy') : t('linkImport'))}</button>
+        <small class="muted">${esc(t('linkImportHint'))}</small>` : ''}
+        <label class="${menuLinks(d).length && !(S.ocr && S.ocr.step === 'shots') ? 'secondary' : 'primary'} block file-btn${S.ocr && S.ocr.busy ? ' busy' : ''}${S.ocr && S.ocr.step === 'shots' ? ' nudge' : ''}" id="shots-btn">
           <input type="file" id="shots" accept="image/*" multiple data-change="shots">
           ${esc(S.ocr && S.ocr.busy ? t('shotsBusy') : d.items.length ? t('shotsPick') : '📷 ' + t('pickMenuShots'))}
         </label>
@@ -1960,7 +1965,7 @@
         <button class="secondary small" data-act="copyItems">${esc(t('copyItemsBtn'))}</button></div>
       </section>` : ''}
 
-      <details class="panel paste">
+      <details class="panel paste${S.ocr && S.ocr.step === 'paste' ? ' nudge' : ''}" id="paste-panel"${S.ocr && S.ocr.step === 'paste' ? ' open' : ''}>
         <summary>${esc(t('pasteMenu'))}</summary>
         <ol class="steps-mini">
           <li>${esc(t('pasteStep1'))}</li><li>${esc(t('pasteStep2'))}</li><li>${esc(t('pasteStep3'))}</li>
@@ -2611,7 +2616,7 @@
     joinGroup: () => joinPending(),
 
     /* restaurants */
-    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', webUrl: '', fees: {}, items: [] }; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : from === 'admin' ? 'admin' : 'restaurants' }); },
+    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', webUrl: '', menuUrl: '', fees: {}, items: [] }; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : from === 'admin' ? 'admin' : 'restaurants' }); },
     editRestaurant: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r) return;
       S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false;
@@ -2648,6 +2653,7 @@
     },
     draftDelItem: el => { syncDraft(); S.draft.items = S.draft.items.filter(i => i.id !== el.dataset.id); render(true); },
     clearMenu: () => { if (S.confirmKey !== 'clearMenu') { syncDraft(); S.confirmKey = 'clearMenu'; return render(true); } syncDraft(); S.draft.items = []; S.confirmKey = null; render(true); toast(t('menuCleared')); },
+    linkImport: () => importFromLinks(),
     parseMenu: () => {
       syncDraft();
       const ta = $('#paste-menu');
@@ -2667,7 +2673,7 @@
       syncDraft();
       const d = S.draft;
       if (!d.name.trim()) return toast(t('errRestName'), 'warn');
-      for (const k of ['talabatUrl', 'webUrl']) { if (d[k] && !cleanUrl(d[k])) return toast(t('badLink'), 'warn'); d[k] = cleanUrl(d[k]); }
+      for (const k of ['talabatUrl', 'webUrl', 'menuUrl']) { if (d[k] && !cleanUrl(d[k])) return toast(t('badLink'), 'warn'); d[k] = cleanUrl(d[k]); }
       if (PL.available() && !d.id && !d.place) return toast(t('placeNeed'), 'warn');
       if (d.deliveryKm !== undefined) { const km = C.round2(C.num(d.deliveryKm)); if (km > 0) d.deliveryKm = km; else delete d.deliveryKm; }
       d.optGroups = (d.optGroups || []).map(g => Object.assign({}, g, { name: (g.name || '').trim(), choices: (g.choices || []).filter(c => (c.name || '').trim()) })).filter(g => g.name && g.choices.length);
@@ -3119,6 +3125,39 @@
     return (name ? name + ' ' : '') + price + ' ج.م';
   }
 
+  // Put menu items read from screenshots, pasted text or a link into the restaurant; returns how many were new or repriced.
+  async function addMenuItems(items, opts) {
+    opts = opts || {};
+    const files = opts.files || [];
+    const status = opts.status || (() => {});
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const at = today.getTime();   // a menu price counts from the start of the day: that day's receipt still wins
+    const have = new Set(S.draft.items.map(i => C.normName(i.name) + '|' + i.price));
+    let added = 0;
+    for (const it of items) {
+      const k = C.normName(it.name) + '|' + it.price;
+      if (have.has(k)) continue;
+      have.add(k);
+      const ex = findItem(S.draft.items, it.name);
+      if (ex) { if (C.num(ex.price) !== it.price && at >= priceAt(S.draft.name, ex)) { ex.oldPrice = ex.oldPrice || ex.price; ex.price = it.price; ex.at = at; ex.fresh = true; added++; } continue; }
+      S.draft.items.push({ id: rid(8), name: it.name, price: it.price, category: it.category, fresh: true, at });
+      added++;
+    }
+    const name = S.draft.name;
+    if (added && items.length) {
+      const menuRec = { kind: 'menu', items: items.map(i => ({ name: i.name, unit: i.price, qty: 1 })) };
+      if (name && S.store.saveReceipt) {
+        status(t('rcSaving'));
+        if (!opts.reimport && files.length) { try { await S.store.saveReceipt(S.gid, { restName: name, at, parsed: menuRec, image: await shrinkImages(files) }); } catch (e) { console.warn(e); } }
+        const keep = clone(S.draft); keep.items = keep.items.map(({ fresh, oldPrice, ...it }) => it); delete keep.priceSource;
+        const id = await guard(S.store.saveRestaurant(S.gid, keep));
+        if (id) S.draft.id = id;
+        loadHistory(name, true); loadReceipts(name);
+      } else if (!opts.reimport && files.length) S.pendingMenu = { at, parsed: menuRec, image: await shrinkImages(files) };
+    }
+    return added;
+  }
+
   async function readScreenshots(files, opts) {
     opts = opts || {};
     if (!files.length || (S.ocr && S.ocr.busy)) return;
@@ -3182,39 +3221,89 @@
           + (dup ? ' ' + t('receiptDup', { n: dup }) : '') + (unsure ? ' ' + t('receiptUnsure', { n: unsure }) : '') + (other.length ? ' ' + t('receiptOtherSkipped', { s: Array.from(new Set(other)).join(comma()) }) : '');
       } else {
         const res = C.parseMenu(lines.map(lineText).join('\n'), { ocr: true });
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        const at = today.getTime();   // a menu price counts from the start of the day: that day's receipt still wins
-        const have = new Set(S.draft.items.map(i => C.normName(i.name) + '|' + i.price));
-        let added = 0;
-        for (const it of res.items) {
-          const k = C.normName(it.name) + '|' + it.price;
-          if (have.has(k)) continue;
-          have.add(k);
-          const ex = findItem(S.draft.items, it.name);
-          if (ex) { if (C.num(ex.price) !== it.price && at >= priceAt(S.draft.name, ex)) { ex.oldPrice = ex.oldPrice || ex.price; ex.price = it.price; ex.at = at; ex.fresh = true; added++; } continue; }
-          S.draft.items.push({ id: rid(8), name: it.name, price: it.price, category: it.category, fresh: true, at });
-          added++;
-        }
-        const name = S.draft.name;
-        if (added && res.items.length) {
-          const menuRec = { kind: 'menu', items: res.items.map(i => ({ name: i.name, unit: i.price, qty: 1 })) };
-          if (name && S.store.saveReceipt) {
-            status(t('rcSaving'));
-            if (!opts.reimport) { try { await S.store.saveReceipt(S.gid, { restName: name, at, parsed: menuRec, image: await shrinkImages(files) }); } catch (e) { console.warn(e); } }
-            const keep = clone(S.draft); keep.items = keep.items.map(({ fresh, oldPrice, ...it }) => it); delete keep.priceSource;
-            const id = await guard(S.store.saveRestaurant(S.gid, keep));
-            if (id) S.draft.id = id;
-            loadHistory(name, true); loadReceipts(name);
-          } else if (!opts.reimport) S.pendingMenu = { at, parsed: menuRec, image: await shrinkImages(files) };
-        }
+        const added = await addMenuItems(res.items, { files, reimport: opts.reimport, status });
         S.ocr.busy = false; S.ocr.error = !added;
-        S.ocr.msg = added ? t('shotsDone', { n: added, m: files.length }) + (res.skipped.length ? ' ' + t('skippedLines', { s: res.skipped.slice(0, 6).join(' / ') }) : '') : t('shotsNone');
+        S.ocr.msg = added ? t('shotsDone', { n: added, m: files.length }) + (res.skipped.length ? ' ' + t('skippedLines', { s: res.skipped.slice(0, 6).join(' / ') }) : '') : t('shotsNone') + ' ' + t('tryPaste');
+        if (!added && !S.draft.items.length) S.ocr.step = 'paste';
       }
     } catch (e) {
       console.warn(e);
-      S.ocr.busy = false; S.ocr.error = true; S.ocr.msg = t('shotsFail');
+      S.ocr.busy = false; S.ocr.error = true; S.ocr.msg = t('shotsFail') + ' ' + t('tryPaste');
+      if (!S.draft.items.length) S.ocr.step = 'paste';
     }
     render(true);
+    if (S.ocr && S.ocr.step === 'paste') { const pp = $('#paste-panel'); if (pp) pp.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  }
+
+  /* ---------- menu from the restaurant's links (1st way), then screenshots (2nd), then pasted text (3rd) ---------- */
+  async function menuFetch(url, image) {
+    const st = S.store;
+    if (!st || !st.url || !st.key || !st.token) throw new Error('demo');
+    const res = await fetch(st.url + '/functions/v1/menu-fetch', {
+      method: 'POST',
+      headers: { apikey: st.key, Authorization: 'Bearer ' + st.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: st.token, url, image: !!image })
+    });
+    let d = null; try { d = await res.json(); } catch (e) { }
+    return d || { kind: 'fail', reason: 'http' + res.status };
+  }
+  async function dataUrlFile(dataUrl, name) { const b = await (await fetch(dataUrl)).blob(); return new File([b], name, { type: b.type || 'image/jpeg' }); }
+  async function importFromLinks() {
+    if (S.ocr && S.ocr.busy) return;
+    syncDraft();
+    const links = menuLinks(S.draft);
+    if (!links.length) return;
+    if (!(S.store && S.store.url && S.store.token)) return toast(t('linkNeedsLive'), 'warn');
+    const status = msg => { S.ocr.msg = msg; const el = $('#ocr-status'); if (el) { el.hidden = false; el.textContent = msg; } };
+    S.ocr = { busy: true, link: true, msg: '', thumbs: (S.ocr && S.ocr.thumbs) || [] };
+    render(true);
+    const tried = [];
+    let added = 0, found = 0, how = '';
+    for (const url of links) {
+      let host = url; try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (e) { }
+      status(t('linkTrying', { h: host }));
+      let r;
+      try { r = await menuFetch(url); } catch (e) { console.warn(e); r = { kind: 'fail', reason: 'unreachable' }; }
+      let items = [];
+      if (r.kind === 'items') items = (r.items || []).filter(i => i && i.name && C.num(i.price) > 0).map(i => ({ name: C.fixSpelling(String(i.name).trim()), price: C.round2(C.num(i.price)), category: (i.category || '').trim() }));
+      else if (r.kind === 'text') {
+        // a web page has more than the menu: drop hotlines, years and other lines that only look priced
+        const res = C.parseMenu(r.text || '');
+        const menuish = res.items.filter(i => i.price > 0 && i.price <= 3000 && i.name.length >= 2 && i.name.length <= 60 && !/اتصل|تليفون|هاتف|الخط الساخن|خط ساخن|واتس|whats|phone|call|hotline|copyright|©|حقوق|العنوان|address|شارع|street|عام|year/i.test(i.name));
+        if (menuish.length >= 3) items = menuish;
+        else if ((r.images || []).length) r = { kind: 'images', urls: r.images };
+      }
+      if (!items.length && (r.kind === 'image' || r.kind === 'images')) {   // the link is (or shows) a menu picture: read it on the phone
+        const files = [];
+        try {
+          if (r.kind === 'image') files.push(await dataUrlFile(r.dataUrl, 'menu-link.jpg'));
+          else for (const [n, u] of r.urls.slice(0, 6).entries()) { status(t('linkPics', { n: n + 1, m: Math.min(6, r.urls.length) })); const im = await menuFetch(u, true); if (im.kind === 'image') files.push(await dataUrlFile(im.dataUrl, 'menu-' + (n + 1) + '.jpg')); }
+          if (files.length) {
+            const { lines } = await ocrRead(files, status);
+            const res = C.parseMenu(lines.filter(l => !l.sep).map(lineText).join('\n'), { ocr: true });
+            if (res.items.length >= 3) { items = res.items; S.ocr.linkFiles = files; }
+          }
+        } catch (e) { console.warn(e); }
+      }
+      if (items.length) {
+        found = items.length;
+        added = await addMenuItems(items, { files: S.ocr.linkFiles || [], status });
+        how = host;
+        break;
+      }
+      const why = 'why_' + (/^http\d/.test(r.reason || '') ? 'http' : (r.reason || 'noMenu'));
+      tried.push(host + ' (' + t(I18N.ar[why] ? why : 'why_noMenu') + ')');
+    }
+    S.ocr.busy = false; S.ocr.link = false; delete S.ocr.linkFiles;
+    if (found) {
+      S.ocr.error = false; S.ocr.step = null;
+      S.ocr.msg = added ? t('linkDone', { n: added, h: how }) : t('linkNothingNew', { h: how });
+    } else {
+      S.ocr.error = true; S.ocr.step = 'shots';
+      S.ocr.msg = t('linkFail', { s: tried.join(comma()) });
+    }
+    render(true);
+    if (S.ocr.step === 'shots') { const b = $('#shots-btn'); if (b) b.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   }
 
   /* ---------- receipt for an order: real names and prices, real charges ---------- */
