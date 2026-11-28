@@ -724,6 +724,7 @@
       ${banner}
       ${c.solo ? `<p class="banner soft"><span>${esc(t('soloOrderedNote'))}</span></p>` : ''}
       ${host && !c.solo && isAdmin() && (st === 'ordering' || st === 'closed') ? changeRestPanel(c) : ''}
+      ${st !== 'voting' ? sourceBar(c, st, host) : ''}
       ${!host && !c.solo && st === 'ordering' && personStatus(c, me()) !== 'out' && S.restaurants.length > 1
         ? `<button class="ghost small center" data-act="goSolo" data-id="${esc(c.id)}">${esc(S.confirmKey === 'solo:' + c.id ? t('soloConfirm') : t('soloInstead', { rest: c.restaurant.name }))}</button>` : ''}`;
     if (st === 'voting') return head + votingView(c);
@@ -741,6 +742,56 @@
       </div>`;
   }
 
+  /* where this order is placed from; the host switches it when the restaurant doesn't answer or won't deliver */
+  const srcLocked = c => !!c.receiptAt || Object.values(c.payments || {}).some(p => p && (p.status === 'confirmed' || p.status === 'reported'));
+  function sourceBar(c, st, host) {
+    const I = srcInfo(c);
+    const cur = I.list.find(x => x.id === I.cur);
+    const usable = I.list.filter(x => x.id === I.cur || C.menuFor(I.menuAll, x.id, I.def).length);
+    const can = host && (st === 'ordering' || st === 'closed') && !srcLocked(c) && usable.length > 1;
+    const droppedKeys = Object.keys(c.members || {}).filter(k => k !== me() && ((c.members[k] || {}).dropped || []).length && !(c.members[k] || {}).done && (c.members[k] || {}).status !== 'out');
+    let html = '';
+    if (can) {
+      const warnId = (S.confirmKey || '').startsWith('src:') ? S.confirmKey.slice(4) : null;
+      let warn = '';
+      if (warnId) {
+        const res = C.switchSource(c, I.menuAll, warnId, I.def, I.cur);
+        const names = Array.from(new Set(res.affected.flatMap(k => (res.members[k].dropped || []).map(d => C.fixSpelling(d.name)))));
+        warn = `<p class="form-error">${esc(t('srcSwitchWarn', { s: srcName(I.list.find(x => x.id === warnId)), items: names.join(comma()), n: res.affected.length }))}</p>`;
+      }
+      html = `<section class="panel src-bar">
+        <div class="src-row"><span class="label">${esc(t('orderFrom'))}</span>
+          <div class="seg small" role="group">${usable.map(x => `<button class="${x.id === I.cur ? 'on' : ''}${warnId === x.id ? ' warn' : ''}" aria-pressed="${x.id === I.cur}" data-act="switchSource" data-id="${esc(x.id)}">${x.id === I.def ? '⭐ ' : ''}${esc(srcName(x))}</button>`).join('')}</div></div>
+        ${warn || `<p class="muted small-text">${esc(t('srcSwitchHint'))}</p>`}
+      </section>`;
+    } else if (cur && I.list.length > 1) {
+      html = `<p class="src-line small-text"><span class="muted">${esc(t('orderFrom'))}:</span> <b>${esc(srcName(cur))}</b>${host && srcLocked(c) ? ` <small class="muted">· ${esc(t('srcLocked'))}</small>` : ''}</p>`;
+    }
+    if (host && droppedKeys.length) {
+      const ppl = people(c);
+      html += `<section class="panel warn-soft src-dropped"><p class="label">⚠ ${esc(t('srcDroppedHost'))}</p><ul class="plain">${droppedKeys.map(k => {
+        const m = c.members[k], who = (ppl[k] && ppl[k].name) || m.name || '';
+        const items = (m.dropped || []).map(d => C.fixSpelling(d.name)).join(comma());
+        const msg = t('srcDroppedMsg', { name: who, rest: c.restaurant.name, s: srcName(cur), items, link: cartLink(c) });
+        const phone = (ppl[k] && ppl[k].phone) || m.phone || '';
+        return `<li><span><b>${esc(who)}</b> <small class="muted">${esc(items)}</small></span>${wa(waLink(phone, msg), t('remind'), 'small')}</li>`;
+      }).join('')}</ul></section>`;
+    }
+    return html;
+  }
+  // a person whose items aren't sold by the new source: what came out, so they can pick something else
+  function droppedNotice(c, m) {
+    if (!m || !(m.dropped || []).length || m.done || m.status === 'out') return '';
+    const cur = srcInfo(c).list.find(x => x.id === srcInfo(c).cur);
+    return `<section class="banner warn src-dropped-mine"><span><b>${esc(t('srcDroppedTitle', { s: srcName(cur) }))}</b><br>${esc(t('srcDroppedMine', { items: m.dropped.map(d => (C.num(d.qty) > 1 ? d.qty + ' × ' : '') + C.fixSpelling(d.name)).join(comma()) }))}</span></section>`;
+  }
+  // the same item's price on the order's other sources ("Talabat: 18")
+  function altPrices(c, it) {
+    const I = srcInfo(c);
+    if (I.list.length < 2 || !it.prices) return '';
+    const alts = I.list.filter(x => x.id !== I.cur && C.num(it.prices[x.id]) > 0 && C.num(it.prices[x.id]) !== C.num(it.price));
+    return alts.length ? `<small class="dish-alt tnum">${alts.map(x => esc(t('srcAlt', { s: srcName(x), p: C.fmtMoney(it.prices[x.id]) }))).join(' · ')}</small>` : '';
+  }
   function changeRestPanel(c) {
     if (!S.route.change) return `<button class="ghost small" data-act="changeRestOpen">⇄ ${esc(t('changeRest'))}</button>`;
     const ordered = Object.values(c.members || {}).filter(m => (m.items || []).length).length;
@@ -960,7 +1011,7 @@
               <button class="dish-main" data-act="${add}" data-id="${esc(it.id)}" aria-label="${esc(t('addOne', { name: it.name }))}">
                 <strong class="dish-name">${esc(it.name)}</strong>
                 ${og.length ? `<small class="dish-opts">${esc(og.map(g => g.name).join(' · '))}</small>` : ''}
-                <span class="dish-price tnum">${esc(money(it.price))}</span>
+                <span class="dish-price tnum">${esc(money(it.price))}</span>${altPrices(c, it)}
               </button>
               ${n && mine ? `<div class="dish-step" role="group">
                   <button data-act="qty" data-id="${esc(mine.id)}" data-d="-1" aria-label="−">−</button>
@@ -984,7 +1035,7 @@
       </section>` : '';
 
     return `<section class="stack">
-        ${picker}${attend}${money0}${repeat}${estBox}
+        ${picker}${attend}${droppedNotice(c, m)}${money0}${repeat}${estBox}
         <div class="section-head"><h2>${esc(forOther ? t('itemsOf', { name: who }) : t('myItems'))}</h2>${items.length ? `<button class="ghost small" data-act="basketOpen" data-id="${esc(c.id)}" data-key="${esc(key)}">🧺 ${esc(t('basketView'))}</button>` : ''}</div>
         ${myList}${mySharedLines(c, key)}${doneBlock}
       </section>${host && st !== 'settled' ? sharedPanel(c) : ''}${menu}`;
@@ -1170,7 +1221,7 @@
       ${st === 'ordering' ? `<p class="banner soft">${esc(t('stillOpenWarn'))}</p>` : ''}
       ${st === 'ordered' || st === 'settled' ? `<p class="banner ok">${esc(t('orderedNote'))}</p>` : ''}
       <div class="ticket">
-        <div class="ticket-head"><strong>${esc(r.name)}</strong><span class="muted tnum">${esc(fmtTime(Date.now()))}</span></div>
+        <div class="ticket-head"><strong>${esc(r.name)}${srcInfo(c).list.length > 1 ? ` <small class="muted">· ${esc(srcName(srcInfo(c).list.find(y => y.id === srcInfo(c).cur)))}</small>` : ''}</strong><span class="muted tnum">${esc(fmtTime(Date.now()))}</span></div>
         ${checkProgress(c, agg)}
         <ul class="agg">${agg.lines.map(l => { const id = lineId(l), on = !!(c.checked || {})[id]; return `<li class="${on ? 'done' : ''}">
           <label class="chk"><input type="checkbox" data-change="checkLine" data-id="${id}" ${on ? 'checked' : ''} ${host ? '' : 'disabled'} aria-label="${esc(t('markOrdered1'))}"></label>
@@ -1191,6 +1242,8 @@
         ${links.web ? `<a class="secondary" href="${esc(links.web)}" target="_blank" rel="noopener">${esc(t('restPage'))} ↗</a>` : ''}
       </div>
       ${r.phone ? `<p class="phone-line"><span>${esc(t('callRest'))}:</span> <a href="tel:${esc(C.latinDigits(r.phone).replace(/[^\d+]/g, ''))}" class="tnum" dir="ltr">${esc(r.phone)}</a></p>` : ''}
+      ${(() => { const I = srcInfo(c), x = I.list.find(y => y.id === I.cur); if (!x || x.kind !== 'other' || !(x.phone || x.url)) return '';
+        return `<p class="phone-line"><span>${esc(srcName(x))}:</span> ${x.phone ? `<a href="tel:${esc(C.latinDigits(x.phone).replace(/[^\d+]/g, ''))}" class="tnum" dir="ltr">${esc(x.phone)}</a>` : ''} ${cleanUrl(x.url) ? `<a href="${esc(cleanUrl(x.url))}" target="_blank" rel="noopener">${esc(t('openLink'))} ↗</a>` : ''}</p>`; })()}
       ${host && (st === 'ordering' || st === 'closed') ? `<button class="primary block big" data-act="markOrdered">✓ ${esc(t('markOrdered'))}</button><p class="muted small-text center">${esc(t('markOrderedHint'))}</p>` : ''}
     </section>`;
   }
@@ -1768,7 +1821,7 @@
     if (S.editItem === it.id && !S.pickMode) return `<li class="ed-open${it.fresh ? ' fresh' : ''}" data-item="${esc(it.id)}">
       <label class="field"><span>${esc(t('itemName'))}</span><textarea class="ei-name" id="ei-n-${esc(it.id)}" data-change="itemName" data-id="${esc(it.id)}" rows="${Math.max(1, Math.ceil(it.name.length / 30))}">${esc(it.name)}</textarea></label>
       <div class="grid2">
-        <label class="field"><span>${esc(t('price'))}</span><input class="ei-price tnum" id="ei-p-${esc(it.id)}" data-change="itemPrice" data-id="${esc(it.id)}" inputmode="decimal" value="${esc(it.price)}"></label>
+        <label class="field"><span>${esc(t('price'))}</span><input class="ei-price tnum" id="ei-p-${esc(it.id)}" data-change="itemPrice" data-id="${esc(it.id)}" inputmode="decimal" value="${esc(it.price)}">${d.sources && d.sources.length > 1 ? `<small>${esc(t('srcPriceHint', { s: srcName(curSrc(d)) }))}</small>` : ''}</label>
         <label class="field"><span>${esc(t('category'))}</span>${catSelect(cats, it.category, `data-change="itemCat" data-id="${esc(it.id)}"`)}</label>
       </div>
       <div class="ei-og"><span class="label">${esc(t('ogForItem'))}</span>
@@ -1785,12 +1838,51 @@
     return `<li class="ed-row${it.fresh ? ' fresh' : ''}${on ? ' picked' : ''}" data-item="${esc(it.id)}"><button class="ed-sum" data-act="${S.pickMode ? 'pickItem' : 'editItem'}" data-id="${esc(it.id)}"${S.pickMode ? ` aria-pressed="${on}"` : ''}>
       ${S.pickMode ? `<span class="ed-tick" aria-hidden="true">${on ? '✓' : ''}</span>` : ''}
       <span class="ed-name">${esc(it.name)}${ogTags(it, d)}${it.oldPrice && it.oldPrice !== it.price ? `<small class="was tnum">${esc(t('wasPrice', { p: C.fmtMoney(it.oldPrice) }))}</small>` : moveTag(d.name, it.name, C.num(it.price), true)}</span>
-      <span class="ed-price tnum">${esc(C.fmtMoney(it.price))}</span>${S.pickMode ? '' : '<span class="ed-pen" aria-hidden="true">✎</span>'}
+      <span class="ed-price tnum">${C.num(it.price) > 0 ? esc(C.fmtMoney(it.price)) : `<small class="muted">${esc(t('srcNotOnMenu', { s: srcName(curSrc(d)) }))}</small>`}</span>${S.pickMode ? '' : '<span class="ed-pen" aria-hidden="true">✎</span>'}
     </button></li>`;
   }
   // swap one item's row in place, without drawing the whole page again (fast with long menus)
   // Save shows only when something changed since the restaurant was opened or last saved
-  const draftSig = () => S.draft ? JSON.stringify(S.draft) : '';
+  const draftSig = () => S.draft ? JSON.stringify(finalDraft(S.draft)) : '';
+  /* The restaurant page edits one source's menu at a time (S.draft._src): draft.items show that source's prices
+     and draft.fees its usual charges. These turn the page back into what is saved. */
+  function draftOpen(d) {
+    d.items = d.items || [];
+    const def = C.defaultSourceOf(d);
+    d.sources = C.sourcesOf(d).map(x => Object.assign({ fees: {} }, clone(x)));
+    d.defaultSource = def;
+    d._src = S.edSrcKeep && d.sources.some(x => x.id === S.edSrcKeep) ? S.edSrcKeep : def;
+    S.edSrcKeep = null;
+    d.items = C.viewItems(d.items, d._src, def);
+    d.fees = clone((d.sources.find(x => x.id === d._src) || {}).fees || {});
+    return d;
+  }
+  function draftStash(d) {
+    const s0 = d.sources.find(x => x.id === d._src);
+    if (s0) s0.fees = clone(d.fees || {});
+    return C.storeItems(d.items, d._src, C.sourceOrder(d));
+  }
+  function finalDraft(d0) {
+    if (!d0.sources) return d0;
+    const d = clone(d0);
+    d.items = draftStash(d).filter(i => Object.keys(i.prices || {}).length);   // an item with no price anywhere is off every menu
+    const def = C.defaultSourceOf(d);
+    const ds = d.sources.find(x => x.id === def) || {};
+    d.defaultSource = def;
+    d.fees = clone(ds.fees || {});
+    d.orderVia = ds.kind === 'talabat' ? 'talabat' : 'phone';
+    d.sources = d.sources.map(x => { const o = { id: x.id, kind: x.kind || 'other', fees: x.fees || {} }; if (x.name) o.name = x.name; if (x.phone) o.phone = x.phone; if (x.url) o.url = x.url; if (x.feesAt) o.feesAt = x.feesAt; return o; });
+    delete d._src;
+    return d;
+  }
+  function draftSwitchSrc(id) {
+    const d = S.draft; if (!d || !d.sources.some(x => x.id === id) || id === d._src) return;
+    syncDraft();
+    d.items = C.viewItems(draftStash(d), id, C.defaultSourceOf(d));
+    d._src = id;
+    d.fees = clone((d.sources.find(x => x.id === id) || {}).fees || {});
+    S.editItem = null;
+  }
   function draftDirty() {
     if (!S.draft || S.draftBase == null) return false;
     syncDraft();
@@ -1900,6 +1992,32 @@
       </form>
     </section>`;
   }
+  /* ---------- order sources on the restaurant page ---------- */
+  const curSrc = d => (d.sources || []).find(x => x.id === d._src) || (d.sources || [])[0] || { id: 'talabat', kind: 'talabat' };
+  function srcCount(d, id) {
+    return (d.items || []).filter(i => id === d._src ? C.num(i.price) > 0 : C.num((i.prices || {})[id]) > 0).length;
+  }
+  function srcTabs(d, menu) {
+    const def = C.defaultSourceOf(d);
+    return `<div class="src-tabs${menu ? ' src-tabs-menu' : ''}" role="tablist">${(d.sources || []).map(x => `<button role="tab" aria-selected="${x.id === d._src}" class="src-tab${x.id === d._src ? ' on' : ''}" data-act="edSrc" data-id="${esc(x.id)}">
+        ${x.id === def ? '<span class="src-star" aria-hidden="true">⭐</span>' : ''}<span>${esc(menu ? t('srcMenuOf', { s: srcName(x) }) : srcName(x))}</span><small class="tnum">${esc(t('srcItemsIn', { n: srcCount(d, x.id) }))}</small></button>`).join('')}
+      ${menu ? '' : `<button class="src-tab add" data-act="srcAddOpen">${plusIcon()} ${esc(t('srcAdd'))}</button>`}</div>`;
+  }
+  function srcDetails(d) {
+    const x = curSrc(d), def = C.defaultSourceOf(d);
+    const own = x.kind === 'other';
+    return `${S.srcAdding ? `<div class="src-new pay-row"><input id="src-new" placeholder="${esc(t('srcNewName'))}" autocomplete="off"><button class="secondary small" data-act="srcAdd">${esc(t('srcAddBtn'))}</button></div>` : ''}
+      ${own ? `<div class="grid3">
+        <label class="field"><span>${esc(t('srcNameLbl'))}</span><input data-srcf="name" value="${esc(x.name || '')}"></label>
+        <label class="field"><span>${esc(t('srcPhone'))}</span><input data-srcf="phone" type="tel" dir="ltr" value="${esc(x.phone || '')}"></label>
+        <label class="field"><span>${esc(t('srcUrl'))}</span><input data-srcf="url" dir="ltr" value="${esc(x.url || '')}" placeholder="https://…"></label>
+      </div>` : ''}
+      <div class="btn-row tight">
+        ${x.id === def ? `<span class="chip ok">${esc(t('srcIsDefault'))}</span>` : `<button class="secondary small" data-act="srcDefault">${esc(t('srcMakeDefault'))}</button>`}
+        ${(d.sources || []).length > 1 ? `<button class="danger-ghost small" data-act="srcDel">${esc(S.confirmKey === 'srcDel' + x.id ? t('confirmAgain') : t('srcDelete'))}</button>` : ''}
+      </div>
+      ${S.confirmKey === 'srcDel' + x.id ? `<p class="muted small-text">${esc(t('srcDeleteHint'))}</p>` : ''}`;
+  }
   function viewRestaurantEdit() {
     const d = S.draft;
     if (!d) return viewRestaurants();
@@ -1917,17 +2035,18 @@
           </div>
         </div>
         <label class="field"><span>${esc(t('restName'))}</span><input id="r-name" data-draft="name" value="${esc(d.name)}"></label>
-        <div class="grid2">
-          <label class="field"><span>${esc(t('restPhone'))}</span><input id="r-phone" data-draft="phone" type="tel" dir="ltr" value="${esc(d.phone)}"></label>
-          <label class="field"><span>${esc(t('orderVia'))}</span><select id="r-via" data-draft="orderVia">${['phone', 'whatsapp', 'talabat'].map(v => `<option value="${v}"${(d.orderVia || 'talabat') === v ? ' selected' : ''}>${esc(t('via' + v[0].toUpperCase() + v.slice(1)))}</option>`).join('')}</select></label>
-        </div>
+        <label class="field"><span>${esc(t('restPhone'))}</span><input id="r-phone" data-draft="phone" type="tel" dir="ltr" value="${esc(d.phone)}"></label>
         ${linkField('r-talabat', 'talabatUrl', t('talabatLink'), d.talabatUrl, 'https://www.talabat.com/egypt/…')}
         ${linkField('r-web', 'webUrl', t('restLink'), d.webUrl, 'https://…', t('restLinkHint'))}
         ${linkField('r-menu', 'menuUrl', t('menuLink'), d.menuUrl, 'https://…', t('menuLinkHint'))}
       </section>
       ${placePanel(d)}
-      <section class="panel form">
-        <p class="label">${esc(t('typicalCharges'))}</p>
+      <section class="panel form src-panel">
+        <p class="label">${esc(t('srcTitle'))}</p>
+        <p class="muted small-text">${esc(t('srcHint'))}</p>
+        ${srcTabs(d)}
+        ${srcDetails(d)}
+        <p class="label">${esc(t('srcFeesOf', { s: srcName(curSrc(d)) }))}</p>
         <p class="muted small-text">${esc(t('typicalChargesHint'))}</p>
         <div class="grid4 grid5">
           <label class="field"><span>${esc(t('delivery'))}</span><input id="rf-del" class="tnum" inputmode="decimal" data-fee="delivery" value="${f.delivery ? esc(f.delivery) : ''}" placeholder="0"></label>
@@ -1978,7 +2097,9 @@
 
       ${optGroupsPanel(d)}
       <section class="ed-menu">
-        <div class="section-head"><h2>${esc(t('menu'))} <small class="muted">${esc(t('itemsCount', { n: d.items.length }))}</small></h2>
+        ${d.sources && d.sources.length > 1 ? srcTabs(d, true) : ''}
+        ${d.items.length && !d.items.some(i => C.num(i.price) > 0) ? `<p class="banner soft">${esc(t('srcMenuEmpty', { s: srcName(curSrc(d)) }))}</p>` : ''}
+        <div class="section-head"><h2>${esc(d.sources && d.sources.length > 1 ? t('srcMenuOf', { s: srcName(curSrc(d)) }) : t('menu'))} <small class="muted">${esc(t('itemsCount', { n: d.items.filter(i => C.num(i.price) > 0).length }))}</small></h2>
           ${d.items.length && S.history[d.name] ? movesSummary(d) : ''}
           ${d.items.length ? `<button class="ghost small" data-act="clearMenu">${esc(S.confirmKey === 'clearMenu' ? t('confirmAgain') : t('clearMenu'))}</button>` : ''}</div>
         ${d.items.length ? `<div class="sort-bar"><div class="btn-row tight"><button class="secondary small" data-act="autoSortMenu">🗂 ${esc(S.confirmKey === 'autoSort' ? t('confirmAgain') : t('autoSort'))}</button><button class="${S.pickMode ? 'primary' : 'secondary'} small" data-act="pickStart">☑️ ${esc(t('pickSome'))}</button></div><small class="muted">${esc(t('autoSortHint'))}</small></div>` : ''}
@@ -2118,13 +2239,79 @@
     const A = S.adm || { tab: 'overview', loading: true };
     const tab = A.tab || 'overview';
     const D = A.data;
-    const tabs = [['overview', t('admOverview')], ['people', t('admPeople')], ['rest', t('navRestaurants')], ['groups', t('admGroups')], ['money', t('admMoney')]];
+    const tabs = [['overview', t('admOverview')], ['people', t('admPeople')], ['rest', t('navRestaurants')], ['prices', t('admPrices')], ['groups', t('admGroups')], ['money', t('admMoney')]];
     let body = '';
     if (!D) body = A.error ? `<p class="empty">${esc(t('errLoadShort'))}</p><button class="secondary" data-act="admReload">${esc(t('retry'))}</button>` : `<div class="loading" aria-busy="true"></div>`;
-    else body = ({ overview: admOverview, people: admPeople, rest: admRest, groups: admGroups, money: admMoney }[tab] || admOverview)(D);
+    else body = ({ overview: admOverview, people: admPeople, rest: admRest, prices: admPrices, groups: admGroups, money: admMoney }[tab] || admOverview)(D);
     return `<div class="section-head"><h1>${icoShield()} ${esc(t('adminTitle'))}</h1><button class="ghost small" data-act="admReload" aria-label="${esc(t('refresh'))}">↻ ${esc(t('refresh'))}</button></div>
         <nav class="tabs adm-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="tab${k === tab ? ' on' : ''}" data-act="admTab" data-tab="${k}">${esc(l)}</button>`).join('')}</nav>
         <div class="tab-body adm-body">${body}</div>`;
+  }
+  /* ---------- price statistics (site admin) ----------
+     Every dated price of every restaurant and source: how much each item went up, and the same item across restaurants. */
+  async function loadPriceStats(force) {
+    const A = S.adm; if (!A || (A.psBusy && !force)) return;
+    A.psBusy = true;
+    try { A.ps = (S.store.priceStats ? await S.store.priceStats() : []) || []; A.psErr = false; }
+    catch (e) { console.warn(e); A.psErr = true; A.ps = null; }
+    A.psBusy = false;
+    if (S.route.name === 'admin') render(true);
+  }
+  function chName(id) {
+    if (id === 'talabat') return t('srcTalabat');
+    if (id === 'direct') return t('srcDirect');
+    for (const r of S.restaurants) { const x = C.sourceById(r, id); if (x) return srcName(x); }
+    return t('srcOther');
+  }
+  function admPrices() {
+    const A = S.adm;
+    if (A.psErr) return `<p class="empty">${esc(t('errLoadShort'))}</p><button class="secondary" data-act="psReload">${esc(t('retry'))}</button>`;
+    if (!A.ps) { if (!A.psBusy) loadPriceStats(); return `<div class="loading" aria-busy="true"></div>`; }
+    if (!A.ps.length) return `<p class="empty">${esc(t('psNone'))}</p>`;
+    const view = A.psView || 'compare', ch = A.psCh || 'all', rk = A.psRest || '';
+    const q = C.normName(A.psQ || '');
+    // the same item spelled two ways (سندوتش / ساندويتش) is one item
+    const ik = n => C.normName(C.fixSpelling(n || '')).replace(/\s+/g, '');
+    const all = C.priceSeries(A.ps.map(r => Object.assign({}, r, { key: ik(r.item) || r.key, item: C.fixSpelling(r.item || '') })));
+    const chans = Array.from(new Set(all.map(x => x.channel)));
+    const rests = Array.from(new Map(all.map(x => [x.restKey, x.rest])).entries()).sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'ar'));
+    const series = all.filter(x => (ch === 'all' || x.channel === ch) && (!q || C.normName(x.item).includes(q)));
+    const cmp = C.priceCompareAll(series, ch).filter(e => !rk || e.offers.some(o => o.restKey === rk));
+    const moved = series.filter(x => x.changes > 0 && (!rk || x.restKey === rk));
+    const avg = moved.length ? C.round2(moved.reduce((a, x) => a + x.pct, 0) / moved.length) : 0;
+    const lim = A.psLim || 40;
+    const pct = v => `${v > 0 ? '▲' : v < 0 ? '▼' : ''} ${C.fmtMoney(Math.abs(v))}%`;
+    const tiles = `<div class="summary adm-tiles">
+        <div><span>${esc(t('psItemsTracked'))}</span><strong class="tnum">${new Set(series.map(x => x.key)).size}</strong></div>
+        <div><span>${esc(t('psRestsTracked'))}</span><strong class="tnum">${new Set(series.map(x => x.restKey)).size}</strong></div>
+        <div><span>${esc(t('psMultiRest'))}</span><strong class="tnum">${cmp.filter(e => e.rests > 1).length}</strong></div>
+        <div><span>${esc(t('psAvgRise'))}</span><strong class="tnum">${esc(pct(avg))}</strong></div>
+      </div>`;
+    const bar = `<div class="ps-bar">
+        <div class="seg small" role="group"><button class="${view === 'compare' ? 'on' : ''}" data-act="psView" data-v="compare">${esc(t('psCompare'))}</button><button class="${view === 'rises' ? 'on' : ''}" data-act="psView" data-v="rises">${esc(t('psRises'))}</button></div>
+        <div class="grid3">
+          <select data-change="psCh" aria-label="${esc(t('srcTitle'))}"><option value="all">${esc(t('psAllSrc'))}</option>${chans.map(c0 => `<option value="${esc(c0)}"${c0 === ch ? ' selected' : ''}>${esc(chName(c0))}</option>`).join('')}</select>
+          <select data-change="psRest" aria-label="${esc(t('psRestFilter'))}"><option value="">${esc(t('psRestFilter'))}</option>${rests.map(([k, n]) => `<option value="${esc(k)}"${k === rk ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
+          <input type="search" data-change="psQ" placeholder="${esc(t('psSearch'))}" value="${esc(A.psQ || '')}">
+        </div></div>`;
+    let body = '';
+    if (view === 'compare') {
+      body = cmp.length ? `<ul class="ps-list">${cmp.slice(0, lim).map(e => `<li class="panel ps-item">
+          <div class="section-head"><b>${esc(e.item)}</b>${e.rests > 1 ? `<small class="muted tnum">${esc(t('psSpread', { d: C.fmtMoney(e.spread), p: C.fmtMoney(e.spreadPct) }))}</small>` : `<small class="muted">${esc(t('psOnlyOne'))}</small>`}</div>
+          <table class="ps-table tnum"><tbody>${e.offers.map((o, i) => `<tr class="${i === 0 && e.offers.length > 1 ? 'best' : ''}${o.restKey === rk ? ' mine' : ''}">
+            <td>${esc(o.rest)} <small class="muted">${esc(chName(o.channel))}</small>${i === 0 && e.offers.length > 1 ? ` <span class="chip ok">${esc(t('psCheapest'))}</span>` : ''}</td>
+            <td class="num"><b>${esc(C.fmtMoney(o.price))}</b></td>
+            <td class="num ${o.pct > 0 ? 'up' : o.pct < 0 ? 'down' : 'muted'}">${o.pct ? esc(pct(o.pct)) : '—'}</td></tr>`).join('')}</tbody></table>
+        </li>`).join('')}</ul>${cmp.length > lim ? `<button class="secondary block" data-act="psMore">${esc(t('psShowMore'))}</button>` : ''}` : `<p class="empty">${esc(t('psNoMatch'))}</p>`;
+    } else {
+      const list = moved.slice().sort((a, b) => b.lastAt - a.lastAt);
+      body = list.length ? `<ul class="ps-list">${list.slice(0, lim).map(x => `<li class="panel ps-item">
+          <div class="section-head"><span><b>${esc(x.item)}</b> <small class="muted">${esc(x.rest)} · ${esc(chName(x.channel))}</small></span><b class="tnum ${x.pct > 0 ? 'up' : 'down'}">${esc(pct(x.pct))}</b></div>
+          <p class="ps-path tnum">${x.points.map(pt => `<span title="${esc(dayFmt(pt.at))}">${esc(C.fmtMoney(pt.price))}</span>`).join(S.lang === 'ar' ? ' ← ' : ' → ')}</p>
+          <small class="muted">${x.since ? esc(t('psSince', { d: dayFmt(x.since) })) + ' · ' : ''}${esc(t('psChanges', { n: x.changes }))} · ${esc(t('psLastChange'))}: ${esc(dayFmt(x.lastAt))} (${esc((x.lastDiff > 0 ? '+' : '−') + C.fmtMoney(Math.abs(x.lastDiff)))})</small>
+        </li>`).join('')}</ul>${list.length > lim ? `<button class="secondary block" data-act="psMore">${esc(t('psShowMore'))}</button>` : ''}` : `<p class="empty">${esc(t('psNoMatch'))}</p>`;
+    }
+    return `<p class="muted small-text">${esc(t('psHint'))}</p>${tiles}${bar}${body}`;
   }
   function admOverview(D) {
     const debts = adminDebts(D);
@@ -2417,17 +2604,29 @@
   }
   const patch = (c, p) => guard(S.store.patchCart(S.gid, c.id, p));
 
-  function snapshotOf(r) {
+  /* An order keeps its own copy of the restaurant when it opens: every source's prices (menuAll), the menu of the
+     source it is ordered from (menu), and each source's usual charges (srcList). Later menu or price changes
+     never reach it — new prices are for new orders only — so its bills and invoices stay as they were. */
+  function snapshotOf(r, src) {
+    const def = C.defaultSourceOf(r);
+    if (!src || !C.sourceById(r, src)) src = def;
+    const s = C.sourceById(r, src) || {};
+    const menuAll = (r.items || []).map(i => { const o = { id: i.id, name: i.name, price: i.price, prices: C.pricesOf(i, def), category: i.category || '' }; const og = C.groupsFor(i, r.optGroups).map(g => g.id); if (og.length) o.og = og; return o; });
     return {
       restaurantId: r.id,
       restaurant: { name: r.name, phone: r.phone || '', talabatUrl: r.talabatUrl || '', webUrl: r.webUrl || '', logo: r.logo || '' },
-      menu: (r.items || []).map(i => { const o = { id: i.id, name: i.name, price: i.price, category: i.category || '' }; const og = C.groupsFor(i, r.optGroups).map(g => g.id); if (og.length) o.og = og; return o; }),
+      source: src, srcDef: def,
+      srcList: C.sourcesOf(r).map(x => ({ id: x.id, kind: x.kind || 'other', name: x.name || '', phone: x.phone || '', url: x.url || '', fees: clone(x.fees || {}) })),
+      menuAll,
+      menu: C.menuFor(menuAll, src, def),
       optGroups: clone((r.optGroups || []).filter(g => (g.choices || []).length && (r.items || []).some(i => (i.og || []).includes(g.id)))),
-      estimate: Object.assign({ delivery: 0, service: 0, tax: 0, taxPct: 0, tip: 0 }, r.fees || {}),
+      estimate: Object.assign({ delivery: 0, service: 0, tax: 0, taxPct: 0, tip: 0 }, s.fees || {}),
       // Tarweeqa fee set on the restaurant: a fixed amount on each person (replaces the usual commission)
-      ...(C.num((r.fees || {}).tqFee) > 0 ? { tqFee: { mode: 'fixed', value: C.round2(C.num(r.fees.tqFee)) }, tqFeeLabel: t('tqFeeLabel') } : {})
+      ...(tqFeeOf(r, s) > 0 ? { tqFee: { mode: 'fixed', value: tqFeeOf(r, s) }, tqFeeLabel: t('tqFeeLabel') } : {})
     };
   }
+  // the Tarweeqa fee: the source's own, else the restaurant's
+  const tqFeeOf = (r, s) => C.round2(C.num(((s || {}).fees || {}).tqFee) || C.num((r.fees || {}).tqFee));
   // a receipt's delivery, service and tax become the restaurant's usual amounts (as on the invoice, not %)
   function learnFees(fees, rc) {
     for (const f of rc.fees || []) {
@@ -2435,6 +2634,20 @@
       else if (f.kind === 'service' && f.amount > 0) { fees.service = f.amount; fees.servicePct = 0; }
       else if (f.kind === 'tax' && f.amount > 0) { fees.tax = f.amount; fees.taxPct = 0; }
     }
+  }
+  // the sources of an order (older orders, opened before sources existed, read them from the restaurant)
+  function srcInfo(c) {
+    const r = S.restaurants.find(x => x.id === c.restaurantId);
+    if (c.menuAll && c.srcList) return { list: c.srcList, def: c.srcDef || c.srcList[0].id, cur: c.source || c.srcDef || c.srcList[0].id, menuAll: c.menuAll };
+    if (r) { const sn = snapshotOf(r); return { list: sn.srcList, def: sn.srcDef, cur: c.source || sn.srcDef, menuAll: sn.menuAll }; }
+    const def = 'talabat';
+    return { list: C.sourcesOf({}).map(x => ({ id: x.id, kind: x.kind, fees: {} })), def, cur: c.source || def, menuAll: (c.menu || []).map(i => Object.assign({}, i, { prices: { [def]: C.num(i.price) } })) };
+  }
+  function srcName(s) {
+    if (!s) return '';
+    if (s.kind === 'talabat') return t('srcTalabat');
+    if (s.kind === 'direct') return s.name || t('srcDirect');
+    return s.name || t('srcOther');
   }
   function chargesFromEstimate(c) {
     const e = c.estimate || {};
@@ -2575,7 +2788,10 @@
     },
     logoRemove: () => { if (!S.draft) return; syncDraft(); S.draft.logo = ''; render(true); },
     admTab: el => { S.adm.tab = el.dataset.tab; S.confirmKey = null; render(true); },
-    admReload: () => loadAdmin(),
+    psView: el => { S.adm.psView = el.dataset.v; S.adm.psLim = 40; render(true); },
+    psMore: () => { S.adm.psLim = (S.adm.psLim || 40) + 40; render(true); },
+    psReload: () => { S.adm.psErr = false; loadPriceStats(true); render(true); },
+    admReload: () => { if (S.adm) S.adm.ps = null; loadAdmin(); },
     admCloseCode: () => { S.adm.code = null; render(true); },
     admResetPin: async el => {
       const r = await guard(S.store.adminResetPin(el.dataset.uid)); if (!r) return;
@@ -2616,12 +2832,41 @@
     joinGroup: () => joinPending(),
 
     /* restaurants */
-    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = { name: '', phone: '', talabatUrl: '', webUrl: '', menuUrl: '', fees: {}, items: [] }; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : from === 'admin' ? 'admin' : 'restaurants' }); },
+    newRestaurant: () => { const from = S.route.name; syncNewOrder(); S.draft = draftOpen({ name: '', phone: '', talabatUrl: '', webUrl: '', menuUrl: '', fees: {}, items: [], sources: [{ id: 'talabat', kind: 'talabat', fees: {} }, { id: 'direct', kind: 'direct', fees: {} }], defaultSource: 'talabat' }); S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false; S.pendingMenu = null; go('restaurant', { from: from === 'newOrder' ? 'newOrder' : from === 'admin' ? 'admin' : 'restaurants' }); },
     editRestaurant: el => {
       const r = S.restaurants.find(x => x.id === el.dataset.id); if (!r) return;
-      S.draft = clone(r); S.draft.items = S.draft.items || []; S.draft.fees = S.draft.fees || {}; S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false;
+      S.draft = draftOpen(clone(r)); S.draftBase = null; S.edQuery = ''; S.savedFlash = false; S.ocr = null; S.pl = null; S.placeEdit = false;
       loadHistory(r.name, true); loadReceipts(r.name);
       go('restaurant', { from: S.route.name === 'admin' ? 'admin' : 'restaurants' });
+    },
+    /* order sources (restaurant page) */
+    edSrc: el => { draftSwitchSrc(el.dataset.id); S.confirmKey = null; render(true); },
+    srcAddOpen: () => { syncDraft(); S.srcAdding = !S.srcAdding; render(true); setTimeout(() => { const i = $('#src-new'); if (i) i.focus(); }, 30); },
+    srcAdd: () => {
+      const inp = $('#src-new'); const name = inp ? inp.value.trim() : '';
+      if (!name) return toast(t('srcNameNeed'), 'warn');
+      syncDraft();
+      const d = S.draft;
+      const id = 's' + rid(6);
+      d.sources.push({ id, kind: 'other', name, fees: {} });
+      S.srcAdding = false;
+      draftSwitchSrc(id);
+      render(true);
+    },
+    srcDefault: () => { syncDraft(); S.draft.defaultSource = S.draft._src; render(true); },
+    srcDel: () => {
+      const d = S.draft, id = d._src;
+      if (d.sources.length < 2) return toast(t('srcNeedOne'), 'warn');
+      if (S.confirmKey !== 'srcDel' + id) { syncDraft(); S.confirmKey = 'srcDel' + id; return render(true); }
+      S.confirmKey = null;
+      syncDraft();
+      const items = draftStash(d).map(i => { const o = Object.assign({}, i, { prices: Object.assign({}, i.prices) }); delete o.prices[id]; if (o.pat) { o.pat = Object.assign({}, o.pat); delete o.pat[id]; } return o; });
+      d.sources = d.sources.filter(x => x.id !== id);
+      if (d.defaultSource === id) d.defaultSource = d.sources[0].id;
+      d._src = d.defaultSource;
+      d.items = C.viewItems(items, d._src, d.defaultSource);
+      d.fees = clone((d.sources.find(x => x.id === d._src) || {}).fees || {});
+      render(true);
     },
     placeNearby: () => { syncDraft(); if (dPoint()) runPlaces('rest', '', true); },
     placeEdit: () => { syncDraft(); S.placeEdit = true; S.pl = null; render(true); },
@@ -2681,15 +2926,16 @@
       d.items = d.items.map(({ fresh, oldPrice, ...it }) => { if (it.og) { it.og = it.og.filter(x => ogIds.has(x)); if (!it.og.length) delete it.og; } return it; });
       delete d.priceSource;
       if (S.saving) return;
+      const out = finalDraft(d);
       S.saving = true; saveBarState();
-      const id = await guard(S.store.saveRestaurant(S.gid, d)).finally(() => { S.saving = false; });
+      const id = await guard(S.store.saveRestaurant(S.gid, out)).finally(() => { S.saving = false; });
       S.ocr = null;
-      if (id && S.pendingMenu && S.store.saveReceipt) { const pm = S.pendingMenu; S.pendingMenu = null; S.store.saveReceipt(S.gid, Object.assign({ restName: d.name }, pm)).catch(e => console.warn(e)); }
+      if (id && S.pendingMenu && S.store.saveReceipt) { const pm = S.pendingMenu; S.pendingMenu = null; S.store.saveReceipt(S.gid, Object.assign({ restName: d.name }, pm, { parsed: Object.assign({}, pm.parsed || {}, { channel: (pm.parsed && pm.parsed.channel) || d._src }) })).catch(e => console.warn(e)); }
       if (!id) return saveBarState();
       // open orders from this restaurant get the new menu and options right away (items people already picked stay as they are)
-      const snap = snapshotOf(Object.assign({}, d, { id }));
+      const saved = Object.assign({}, out, { id });
       const open = S.carts.filter(c => c.restaurantId === id && isOpenStage(stageOf(c)) && isHost(c));
-      for (const c of open) guard(S.store.patchCart(S.gid, c.id, { menu: snap.menu, optGroups: snap.optGroups }));
+      for (const c of open) { const snap = snapshotOf(saved, c.source); guard(S.store.patchCart(S.gid, c.id, { menu: snap.menu, menuAll: snap.menuAll, srcList: snap.srcList, srcDef: snap.srcDef, source: snap.source, optGroups: snap.optGroups })); }
       if (S.route.from === 'newOrder') { toast(open.length ? t('savedOpenToo') : t('saved')); if (!S.sel.includes(id)) S.sel.push(id); return go('newOrder'); }
       if (open.length) toast(t('savedOpenToo'));
       // stay on the restaurant: there is usually more to edit. The button says "Saved", then goes away until the next change.
@@ -2923,7 +3169,8 @@
       if (!src) return;
       const have = new Set(S.draft.items.map(i => C.normName(i.name)));
       let n = 0;
-      for (const it of src.items || []) { if (have.has(C.normName(it.name))) continue; S.draft.items.push({ id: rid(8), name: it.name, price: it.price, category: it.category || '', fresh: true }); n++; }
+      const sdef = C.defaultSourceOf(src);
+      for (const it of src.items || []) { if (have.has(C.normName(it.name))) continue; const pr = C.itemPriceIn(it, S.draft._src, sdef); S.draft.items.push({ id: rid(8), name: it.name, price: pr != null ? pr : it.price, category: it.category || '', fresh: true }); n++; }
       render(true); toast(t('copiedItems', { n }));
     },
     recordDebt: el => {
@@ -3145,11 +3392,11 @@
     }
     const name = S.draft.name;
     if (added && items.length) {
-      const menuRec = { kind: 'menu', items: items.map(i => ({ name: i.name, unit: i.price, qty: 1 })) };
+      const menuRec = { kind: 'menu', channel: S.draft._src || 'talabat', items: items.map(i => ({ name: i.name, unit: i.price, qty: 1 })) };
       if (name && S.store.saveReceipt) {
         status(t('rcSaving'));
         if (!opts.reimport && files.length) { try { await S.store.saveReceipt(S.gid, { restName: name, at, parsed: menuRec, image: await shrinkImages(files) }); } catch (e) { console.warn(e); } }
-        const keep = clone(S.draft); keep.items = keep.items.map(({ fresh, oldPrice, ...it }) => it); delete keep.priceSource;
+        const keep = finalDraft(S.draft); keep.items = keep.items.map(({ fresh, oldPrice, ...it }) => it); delete keep.priceSource;
         const id = await guard(S.store.saveRestaurant(S.gid, keep));
         if (id) S.draft.id = id;
         loadHistory(name, true); loadReceipts(name);
@@ -3195,7 +3442,7 @@
           if (name && S.store.saveReceipt) {
             status(t('rcSaving'));
             try {
-              const sv = await S.store.saveReceipt(S.gid, { restName: name, orderNo: rc.orderNo, at: rcAt(rc), parsed: stripRc(rc), image: await shrinkImages([files[rc.fi]]) });
+              const sv = await S.store.saveReceipt(S.gid, { restName: name, orderNo: rc.orderNo, at: rcAt(rc), parsed: Object.assign(stripRc(rc), { channel: S.draft._src || 'talabat' }), image: await shrinkImages([files[rc.fi]]) });
               if (sv && sv.dup) savedDup++; else saved++;
             } catch (e) { console.warn(e); }
           }
@@ -3209,7 +3456,7 @@
         }
         // keep it: the restaurant is saved right away, so a refresh loses nothing
         if (name && S.draft.items.length) {
-          const keep = clone(S.draft); keep.items = keep.items.map(({ fresh, oldPrice, ...it }) => it); delete keep.priceSource;
+          const keep = finalDraft(S.draft); keep.items = keep.items.map(({ fresh, oldPrice, ...it }) => it); delete keep.priceSource;
           const id = await guard(S.store.saveRestaurant(S.gid, keep));
           if (id) S.draft.id = id;
           loadHistory(name, true); loadReceipts(name);
@@ -3365,7 +3612,7 @@
       if (rc.items.length && S.store.saveReceipt) {
         status(t('rcSaving'));
         try {
-          const sv = await S.store.saveReceipt(S.gid, { cartId: c.id, restName: c.restaurant.name, orderNo: rc.orderNo, at: rcAt(rc), parsed: stripRc(rc), image: await shrinkImages(files) });
+          const sv = await S.store.saveReceipt(S.gid, { cartId: c.id, restName: c.restaurant.name, orderNo: rc.orderNo, at: rcAt(rc), parsed: Object.assign(stripRc(rc), { channel: srcInfo(c).cur }), image: await shrinkImages(files) });
           S.rcpt.id = sv && sv.id;
           await patch(c, { receipt: { id: (sv && sv.id) || '', data: stripRc(rc), savedAt: Date.now() } });
           S.rcpt.msg = t('rcKept');
@@ -3470,15 +3717,21 @@
     const wrongRest = r && rc.restaurant && C.similarity(rc.restaurant, r.name) < 0.34;
     if (r && !wrongRest) {
       await loadHistory(r.name, true);
-      const items = clone(r.items || []);
+      const rdef = C.defaultSourceOf(r), rsrc = C.sourceById(r, srcInfo(c).cur) ? srcInfo(c).cur : rdef;
+      const items = C.viewItems(clone(r.items || []), rsrc, rdef);
       const res = learnFromReceipt(items, rc, pairs, r.name);
       items.forEach(i => { delete i.fresh; delete i.oldPrice; });
-      const fees = Object.assign({}, r.fees || {});
-      const p = { items, lastOrderedAt: Date.now(), priceSource: null };
-      if (rcAt(rc) >= (r.feesAt || 0)) {
+      const p = { items: C.storeItems(items, rsrc, C.sourceOrder(r)), lastOrderedAt: Date.now(), priceSource: null };
+      const srcs = C.sourcesOf(r).map(x => clone(x));
+      const sx = srcs.find(x => x.id === rsrc);
+      const feesAt = (sx && sx.feesAt) || (rsrc === rdef ? r.feesAt : 0) || 0;
+      if (sx && rcAt(rc) >= feesAt) {
+        const fees = Object.assign({}, sx.fees || {});
         learnFees(fees, rc);
-        p.fees = fees; p.feesAt = rcAt(rc);
+        sx.fees = fees; sx.feesAt = rcAt(rc);
+        if (rsrc === rdef) { p.fees = fees; p.feesAt = rcAt(rc); }
       }
+      p.sources = srcs; p.defaultSource = rdef;
       await guard(S.store.patchRestaurant(S.gid, r.id, p));
       loadHistory(r.name, true); loadReceipts(r.name);
       if (res.older) toast(t('rcOlderN', { n: res.older }));
@@ -3557,7 +3810,7 @@
   // the date the item's current price comes from
   function priceAt(restName, it) {
     let at = it.at || 0;
-    for (const r of S.history[restName] || []) if (r.at && r.at > at && namesOf(it).some(n => C.sameItem(r.item, n)) && Math.abs(C.num(r.price) - C.num(it.price)) < 0.005) at = r.at;
+    for (const r of histOf(restName)) if (r.at && r.at > at && namesOf(it).some(n => C.sameItem(r.item, n)) && Math.abs(C.num(r.price) - C.num(it.price)) < 0.005) at = r.at;
     return at;
   }
   // item names: the menu name people see, plus the receipt wordings learned for it (aliases)
@@ -3781,7 +4034,7 @@
   }
   // every receipt side by side: what each item cost on each date
   function priceCompare(d) {
-    const rows = (S.history[d.name] || []).filter(r => r.at);
+    const rows = histOf(d.name).filter(r => r.at);
     const day = ms => { const x = new Date(ms); x.setHours(0, 0, 0, 0); return x.getTime(); };
     const dates = Array.from(new Set(rows.map(r => day(r.at)))).sort((a, b) => b - a).slice(0, 5);
     if (dates.length < 2) return '';
@@ -3804,6 +4057,17 @@
   }
 
   /* ---------- price history ---------- */
+  // the history of the source being looked at: the menu tab on the restaurant page, or the order's source
+  function histCh(restName) {
+    if (S.route.name === 'restaurant' && S.draft && S.draft.name === restName && S.draft._src) return S.draft._src;
+    const c = S.route.name === 'cart' ? cartById(S.route.id) : null;
+    if (c && c.restaurant && c.restaurant.name === restName) return srcInfo(c).cur;
+    return null;
+  }
+  function histOf(restName) {
+    const rows = S.history[restName] || [], ch = histCh(restName);
+    return ch ? rows.filter(r => (r.channel || 'talabat') === ch) : rows;
+  }
   async function loadHistory(restName, force) {
     if (!restName || !S.store.priceHistory) return [];
     if (S.history[restName] && !force) return S.history[restName];
@@ -3815,9 +4079,9 @@
   // the price before the current one, from the restaurant's history
   const pmCache = { ver: '', map: new Map() };
   function priceMove(restName, itemName, price) {
-    const hist = S.history[restName] || [];
+    const hist = histOf(restName);
     const items = (S.draft && S.draft.name === restName ? S.draft.items : null) || (S.restaurants.find(r => r.name === restName) || {}).items || [];
-    const ver = restName + '|' + hist.length + '|' + (hist.length ? hist[hist.length - 1].at : 0) + '|' + items.length;
+    const ver = restName + '|' + histCh(restName) + '|' + hist.length + '|' + (hist.length ? hist[hist.length - 1].at : 0) + '|' + items.length;
     if (pmCache.ver !== ver) { pmCache.ver = ver; pmCache.map.clear(); }
     const key = itemName + '|' + price;
     if (pmCache.map.has(key)) return pmCache.map.get(key);
@@ -3826,7 +4090,7 @@
     return r;
   }
   function priceMove0(restName, itemName, price) {
-    const rows = (S.history[restName] || []).filter(r => histIs(restName, r.item, itemName));
+    const rows = histOf(restName).filter(r => histIs(restName, r.item, itemName));
     if (!rows.length) return null;
     const same = r => Math.abs(C.num(r.price) - price) < 0.005;
     let idx = -1;
@@ -3850,7 +4114,7 @@
   }
   function movesSummary(d) {
     let up = 0, down = 0;
-    for (const it of d.items) { const mv = priceMove(d.name, it.name, C.num(it.price)); if (mv) { if (mv.diff > 0) up++; else down++; } }
+    for (const it of d.items) { if (C.num(it.price) <= 0) continue; const mv = priceMove(d.name, it.name, C.num(it.price)); if (mv) { if (mv.diff > 0) up++; else down++; } }
     if (!up && !down) return `<small class="muted">${esc(t('pricesStable'))}</small>`;
     return `<small class="moves">${up ? `<span class="move up">▲ ${esc(t('nUp', { n: up }))}</span>` : ''}${down ? `<span class="move down">▼ ${esc(t('nDown', { n: down }))}</span>` : ''}</small>`;
   }
@@ -4140,7 +4404,11 @@
     // service and tax are typed as the amount on the invoice: an amount typed replaces the old percentage
     if (feeIns.length) { if (S.draft.fees.service > 0) S.draft.fees.servicePct = 0; if (S.draft.fees.tax > 0) S.draft.fees.taxPct = 0; }
     document.querySelectorAll('[data-change="itemName"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && inp.value.trim() && inp.value.trim() !== it.name) it.name = C.fixSpelling(inp.value.trim()); });
-    document.querySelectorAll('[data-change="itemPrice"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && C.num(inp.value) > 0 && C.round2(C.num(inp.value)) !== C.num(it.price)) { it.price = C.round2(C.num(inp.value)); it.at = Date.now(); } });
+    document.querySelectorAll('[data-change="itemPrice"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (!it) return;
+      if (C.num(inp.value) > 0 && C.round2(C.num(inp.value)) !== C.num(it.price)) { it.price = C.round2(C.num(inp.value)); it.at = Date.now(); }
+      else if (!inp.value.trim() && S.draft.sources && S.draft.sources.length > 1 && C.num(it.price) > 0) { it.price = ''; delete it.at; } });
+    const cs = S.draft.sources && S.draft.sources.find(x => x.id === S.draft._src);
+    if (cs) document.querySelectorAll('[data-srcf]').forEach(inp => { cs[inp.dataset.srcf] = inp.value.trim(); });
     document.querySelectorAll('[data-og]').forEach(inp => {
       const g = draftOg(inp.dataset.og); if (!g) return;
       const v = inp.value.trim(), f = inp.dataset.f;
@@ -4170,6 +4438,9 @@
   function setLang(l) { S.lang = l === 'en' ? 'en' : 'ar'; LS.set('tarweeqa.lang', S.lang); render(true); }
 
   const changes = {
+    psCh: el => { S.adm.psCh = el.value; S.adm.psLim = 40; render(true); },
+    psRest: el => { S.adm.psRest = el.value; S.adm.psLim = 40; render(true); },
+    psQ: el => { S.adm.psQ = el.value; S.adm.psLim = 40; render(true); },
     iOrder: el => {
       const set = new Set(S.group.notOrdering || []);
       if (el.checked) set.delete(me()); else set.add(me());
@@ -4657,6 +4928,29 @@
       p.members = members;
       S.route.change = false; S.confirmKey = null;
       if (await guardOk(S.store.patchCart(S.gid, c.id, p))) toast(t('restChanged', { r: r.name }));
+    },
+    /* same restaurant, another source (Talabat ⇄ the restaurant itself): nobody orders again.
+       Prices come from the order's own copy of the menus, charges from the new source; items it doesn't sell
+       come out of those people's baskets (they get a reminder), and switching back returns them. */
+    switchSource: async el => {
+      const c = curCart(); if (!c || !isHost(c) || srcLocked(c)) return;
+      const I = srcInfo(c), id = el.dataset.id;
+      if (id === I.cur) { S.confirmKey = null; return render(true); }
+      const sx = I.list.find(x => x.id === id); if (!sx) return;
+      const res = C.switchSource(c, I.menuAll, id, I.def, I.cur);
+      if (res.affected.length && S.confirmKey !== 'src:' + id) { S.confirmKey = 'src:' + id; return render(true); }
+      S.confirmKey = null;
+      const p = { source: id, srcDef: I.def, srcList: I.list, menuAll: I.menuAll, menu: res.menu, members: res.members, sourceAt: Date.now(),
+        estimate: Object.assign({ delivery: 0, service: 0, taxPct: 0, tip: 0 }, sx.fees || {}) };
+      if ((c.charges || []).length) p.charges = chargesFromEstimate(Object.assign({}, c, p));
+      const hadInv = c.invoices && Object.keys(c.invoices).length;
+      if (hadInv) { p.invoices = null; p.invoicesAt = null; }
+      const reopen = res.affected.length && stageOf(c) !== 'ordering';
+      if (reopen) { p.stage = 'ordering'; p.closesAt = Math.max(c.closesAt, Date.now() + 15 * 60000); }
+      if (await guardOk(S.store.patchCart(S.gid, c.id, p))) {
+        toast(t(reopen ? 'srcSwitchedReopen' : 'srcSwitched', { s: srcName(sx) }));
+        if (hadInv) setTimeout(() => toast(t('srcInvoicesReset')), 1800);
+      }
     }
   });
 

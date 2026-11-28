@@ -811,7 +811,171 @@
     return { km: round2(km), limit, state: km <= limit ? 'near' : 'far' };
   }
 
-  const api = { fixSpelling, spellData, SPELL, normPhone, isEgMobile, localMobile, groupsFor, optText, optDelta, itemNote, pickOptions, optKey, distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, autoCategory, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
+  /* ---------------- Order sources: one restaurant, several menus ----------------
+     A restaurant can be ordered from more than one place (Talabat, the restaurant itself by phone/site, later others).
+     Each place is a "source" with its own menu prices and its own charges:
+       rest.sources = [{ id, kind: 'talabat'|'direct'|'other', name?, phone?, url?, fees{delivery,servicePct,taxPct,tip} }]
+       rest.defaultSource = the source tried first
+       item.prices = { sourceId: price }   (a missing source = the item isn't on that menu)
+       item.pat    = { sourceId: ms }      (when that price was set — dates the price history)
+     item.price stays as the first source's price, so older screens and the catalog keep working.
+     Restaurants saved before sources existed have only item.price: it is the Talabat price
+     (or the restaurant's own price when it was ordered by phone / WhatsApp). */
+  const SOURCE_KINDS = ['talabat', 'direct', 'other'];
+  function sourcesOf(r) {
+    r = r || {};
+    const list = Array.isArray(r.sources) ? r.sources.filter(s => s && s.id) : [];
+    if (list.length) return list;
+    const via = r.orderVia || 'talabat';
+    const legacy = via === 'talabat' ? 'talabat' : 'direct';
+    return [
+      { id: 'talabat', kind: 'talabat', fees: legacy === 'talabat' ? Object.assign({}, r.fees || {}) : {} },
+      { id: 'direct', kind: 'direct', fees: legacy === 'direct' ? Object.assign({}, r.fees || {}) : {} }
+    ];
+  }
+  function defaultSourceOf(r) {
+    const list = sourcesOf(r);
+    if (r && r.defaultSource && list.some(s => s.id === r.defaultSource)) return r.defaultSource;
+    if (r && !Array.isArray(r.sources) && r.orderVia && r.orderVia !== 'talabat') return 'direct';
+    return list[0].id;
+  }
+  function sourceOrder(r) {
+    const def = defaultSourceOf(r);
+    return [def].concat(sourcesOf(r).map(s => s.id).filter(id => id !== def));
+  }
+  function sourceById(r, id) { return sourcesOf(r).find(s => s.id === id) || null; }
+  // every price an item has, as a map (older items: their one price belongs to the default source)
+  function pricesOf(it, def) {
+    if (it && it.prices && typeof it.prices === 'object') {
+      const out = {};
+      for (const k of Object.keys(it.prices)) if (num(it.prices[k]) > 0) out[k] = round2(num(it.prices[k]));
+      return out;
+    }
+    return it && num(it.price) > 0 ? { [def]: round2(num(it.price)) } : {};
+  }
+  function itemPriceIn(it, src, def) { const p = pricesOf(it, def)[src]; return p == null ? null : p; }
+  /* the menu of one source, for editing: every item, with price = its price there ('' when it isn't on that menu) */
+  function viewItems(items, src, def) {
+    return (items || []).map(it => {
+      const o = Object.assign({}, it);
+      o.prices = pricesOf(it, def);
+      o.pat = Object.assign({}, it.pat || {});
+      if (!it.prices && it.at && o.pat[def] == null) o.pat[def] = it.at;
+      o.price = o.prices[src] != null ? o.prices[src] : '';
+      if (o.pat[src] != null) o.at = o.pat[src]; else delete o.at;
+      return o;
+    });
+  }
+  /* back from editing one source: its prices go into prices[src]; price = the first source that has one */
+  function storeItems(items, src, order) {
+    return (items || []).map(it => {
+      const o = Object.assign({}, it);
+      o.prices = Object.assign({}, it.prices || {});
+      o.pat = Object.assign({}, it.pat || {});
+      if (num(it.price) > 0) o.prices[src] = round2(num(it.price)); else delete o.prices[src];
+      if (it.at) o.pat[src] = it.at;
+      const first = (order || []).find(id => o.prices[id] != null) || Object.keys(o.prices)[0];
+      o.price = first != null ? o.prices[first] : 0;
+      if (first != null && o.pat[first] != null) o.at = o.pat[first]; else delete o.at;
+      if (!Object.keys(o.pat).length) delete o.pat;
+      return o;
+    });
+  }
+  // the order's menu for one source: only what that source sells, at its price
+  function menuFor(menuAll, src, def) {
+    return (menuAll || []).map(i => {
+      const p = itemPriceIn(i, src, def);
+      if (p == null) return null;
+      const o = Object.assign({}, i, { price: p });
+      return o;
+    }).filter(Boolean);
+  }
+  /* Switch an order to another source. Items people picked take the new source's price (+ their options' extra);
+     items the new source doesn't sell come out of the basket into m.dropped, and that person must look again.
+     Switching back brings dropped items back. Typed-in items and shared items are left as they are.
+     Returns { menu, members, affected: [keys that lost items] }. */
+  function switchSource(cart, menuAll, src, def, from) {
+    from = from || cart.source || def;
+    const menu = menuFor(menuAll, src, def);
+    const byId = new Map(menu.map(i => [i.id, i]));
+    const members = {}, affected = [];
+    for (const k of Object.keys(cart.members || {})) {
+      const m = Object.assign({}, cart.members[k]);
+      const keep = [], dropped = [];
+      const pool = (m.items || []).concat((m.dropped || []).map(d => Object.assign({}, d)));
+      for (const it0 of pool) {
+        const it = Object.assign({}, it0);
+        delete it.droppedFrom;
+        if (!it.menuId) { keep.push(it); continue; }
+        const d = optDelta(it);
+        // remember what it cost on the source it leaves, so coming back gives the same price it was picked at
+        if (!it0.droppedFrom) { it.bySrc = Object.assign({}, it.bySrc || {}); it.bySrc[from] = round2(num(it.price) - d); }
+        const mi = byId.get(it.menuId);
+        if (!mi) { it.droppedFrom = src; dropped.push(it); continue; }
+        const was = it.bySrc && it.bySrc[src];
+        const base = was != null && num(was) > 0 ? round2(num(was)) : mi.price;
+        it.base = base; it.price = round2(base + d); it.name = mi.name;
+        const same = keep.find(x => x.menuId === it.menuId && optKey(x) === optKey(it) && (x.note || '') === (it.note || ''));
+        if (same) same.qty = num(same.qty) + num(it.qty); else keep.push(it);
+      }
+      const lost = dropped.filter(d => !(cart.members[k].dropped || []).some(x => x.id === d.id));
+      m.items = keep;
+      if (dropped.length) m.dropped = dropped; else delete m.dropped;
+      if (lost.length && m.status !== 'out') { m.done = false; affected.push(k); }
+      members[k] = m;
+    }
+    return { menu, members, affected };
+  }
+
+  /* ---------------- Price statistics ----------------
+     rows = [{ rest, restKey, item, key, channel, price, at }] — every dated price, all restaurants.
+     series(): one line per restaurant + item + source, oldest → newest, with the change since the first price. */
+  function priceSeries(rows) {
+    const map = new Map();
+    for (const r of (rows || []).slice().sort((a, b) => num(a.at) - num(b.at))) {
+      const k = r.restKey + '|' + r.key + '|' + (r.channel || 'talabat');
+      let s = map.get(k);
+      if (!s) map.set(k, s = { rest: r.rest, restKey: r.restKey, item: r.item, key: r.key, channel: r.channel || 'talabat', points: [] });
+      const p = round2(num(r.price));
+      const last = s.points[s.points.length - 1];
+      if (last && last.price === p) continue;   // the same price again is not a change
+      s.points.push({ price: p, at: num(r.at) });
+      s.item = r.item || s.item;
+    }
+    for (const s of map.values()) {
+      const a = s.points[0], z = s.points[s.points.length - 1];
+      s.first = a.price; s.now = z.price; s.since = a.at; s.lastAt = z.at; s.changes = s.points.length - 1;
+      s.diff = round2(z.price - a.price);
+      s.pct = a.price > 0 ? round2((z.price - a.price) / a.price * 100) : 0;
+      const prev = s.points[s.points.length - 2];
+      s.lastDiff = prev ? round2(z.price - prev.price) : 0;
+      s.lastPct = prev && prev.price > 0 ? round2((z.price - prev.price) / prev.price * 100) : 0;
+    }
+    return Array.from(map.values());
+  }
+  /* the same item across restaurants: one entry per item key, each restaurant's current price, cheapest first */
+  function priceCompareAll(series, channel) {
+    const by = new Map();
+    for (const s of series) {
+      if (channel && channel !== 'all' && s.channel !== channel) continue;
+      let e = by.get(s.key);
+      if (!e) by.set(s.key, e = { key: s.key, item: s.item, offers: [] });
+      e.offers.push({ rest: s.rest, restKey: s.restKey, channel: s.channel, price: s.now, pct: s.pct, lastAt: s.lastAt });
+    }
+    const out = [];
+    for (const e of by.values()) {
+      e.offers.sort((a, b) => a.price - b.price);
+      e.rests = new Set(e.offers.map(o => o.restKey)).size;
+      e.min = e.offers[0].price; e.max = e.offers[e.offers.length - 1].price;
+      e.spread = round2(e.max - e.min);
+      e.spreadPct = e.min > 0 ? round2((e.max - e.min) / e.min * 100) : 0;
+      out.push(e);
+    }
+    return out.sort((a, b) => b.rests - a.rests || b.spreadPct - a.spreadPct || a.item.localeCompare(b.item, 'ar'));
+  }
+
+  const api = { SOURCE_KINDS, sourcesOf, defaultSourceOf, sourceOrder, sourceById, pricesOf, itemPriceIn, viewItems, storeItems, menuFor, switchSource, priceSeries, priceCompareAll,
+    fixSpelling, spellData, SPELL, normPhone, isEgMobile, localMobile, groupsFor, optText, optDelta, itemNote, pickOptions, optKey, distanceKm, reach, withShared, parseReceipt, inferQty, sameItem, similarity, normName, latinDigits, num, round2, fmtMoney, waPhone, isValidPhone, parseMenu, memberSubtotal, eaters, estimateFor, BOLD, autoCategory, computeBill, balances, prevFor, prevDetail, carriedKeys, aggregate, tallyVotes, DEFAULT_SPLIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TarweeqaCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -77,7 +77,30 @@
     async patchGroup(gid, patch) { const g = this.data.groups[gid]; for (const k of Object.keys(patch)) setPath(g, k, patch[k]); this.persist(); }
 
     onRestaurants(gid, cb) { return this.sub(() => cb(Object.values(this.data.restaurants).filter(r => r.groupId === gid).map(clone))); }
+    // demo: like the database, every price that differs from the item's last price in that source becomes a dated row
+    learnPrices(r) {
+      const P = (this.data.prices = this.data.prices || {}); const rows = (P[r.name] = P[r.name] || []);
+      const def = r.defaultSource || (r.orderVia && r.orderVia !== 'talabat' ? 'direct' : 'talabat');
+      for (const it of r.items || []) {
+        const prices = it.prices && typeof it.prices === 'object' ? it.prices : (it.price ? { [def]: it.price } : {});
+        for (const ch of Object.keys(prices)) {
+          const pr = Math.round(parseFloat(prices[ch]) * 100) / 100; if (!(pr > 0)) continue;
+          const at = (it.pat && it.pat[ch]) || (ch === def ? it.at : 0) || Date.now();
+          const mine = rows.filter(x => x.item === it.name && (x.channel || 'talabat') === ch);
+          if (mine.some(x => (x.at || 0) >= at)) continue;
+          const last = mine.sort((a, b) => (a.at || 0) - (b.at || 0)).pop();
+          if (!last || last.price !== pr) rows.push({ item: it.name, price: pr, at, source: 'menu', channel: ch });
+        }
+      }
+      rows.sort((a, b) => (a.at || 0) - (b.at || 0));
+    }
+    async priceStats() {
+      const out = []; const key = s => String(s || '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[^\p{L}\p{N}]+/gu, '');
+      for (const [rest, rows] of Object.entries(this.data.prices || {})) for (const x of rows) out.push({ rest, restKey: key(rest), item: x.item, key: key(x.item), channel: x.channel || 'talabat', price: x.price, at: x.at, source: x.source });
+      return out.sort((a, b) => (a.at || 0) - (b.at || 0));
+    }
     async saveRestaurant(gid, r) {
+      this.learnPrices(r);
       const id = r.id || rid();
       this.data.restaurants[id] = Object.assign({}, this.data.restaurants[id] || {}, clone(r), { id, groupId: gid, updatedAt: Date.now() });
       this.persist(); return id;
@@ -108,8 +131,9 @@
       const P = (this.data.prices = this.data.prices || {}); const rows = (P[r.restName] = P[r.restName] || []);
       for (const it of (r.parsed && r.parsed.items) || []) {
         if (it.unit == null || it.nameUnsure || (it.unsure && !it.qtyInferred)) continue;
-        const i = rows.findIndex(x => x.item === it.name && x.at === r.at); if (i >= 0) rows.splice(i, 1);
-        rows.push({ item: it.name, price: it.unit, at: r.at, source: (r.parsed && r.parsed.kind) || 'receipt' });
+        const ch = (r.parsed && r.parsed.channel) || 'talabat';
+        const i = rows.findIndex(x => x.item === it.name && x.at === r.at && (x.channel || 'talabat') === ch); if (i >= 0) rows.splice(i, 1);
+        rows.push({ item: it.name, price: it.unit, at: r.at, source: (r.parsed && r.parsed.kind) || 'receipt', channel: ch });
       }
       rows.sort((a, b) => (a.at || 0) - (b.at || 0));
       this.persist();
@@ -265,6 +289,7 @@
     async restoreGroup(gid) { await this.rpc('tq_admin_restore_group', { p_gid: gid }); await this.refreshGroups(); }
     saveProfileRemote(name, data) { return this.rpc('tq_save_profile', { p_name: name, p_data: data || {} }); }
     priceHistory(gid, restName) { return this.rpc('tq_price_history', { p_gid: gid, p_rest_name: restName }); }
+    priceStats() { return this.rpc('tq_price_stats'); }
     saveReceipt(gid, r) { return this.rpc('tq_save_receipt', { p_gid: gid, p_cart_id: r.cartId || null, p_rest_name: r.restName, p_order_no: r.orderNo || '', p_at: r.at, p_parsed: r.parsed, p_image: r.image || null }); }
     receipts(gid, restName) { return this.rpc('tq_receipts_list', { p_gid: gid, p_rest_name: restName }); }
     receipt(gid, id) { return this.rpc('tq_receipt_get', { p_gid: gid, p_id: id }); }
