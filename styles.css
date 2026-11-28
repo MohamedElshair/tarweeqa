@@ -1047,3 +1047,37 @@ a.link { color: var(--accent); text-decoration: none; }
 @keyframes nudge { 50% { outline-offset: 5px; } }
 @media (prefers-reduced-motion: reduce) { .nudge { animation: none; } }
 .shots .block + small.muted { display: block; margin: -4px 0 8px; }
+/* ---------- order sources (one restaurant, several menus) ---------- */
+.src-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.src-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); color: var(--fg); font: inherit; cursor: pointer; }
+.src-tab small { color: var(--muted); font-size: .75rem; }
+.src-tab.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.src-tab.add { border-style: dashed; color: var(--accent); }
+.src-tabs-menu { margin-block-end: 8px; }
+.src-star { font-size: .85em; }
+.src-new { display: flex; gap: 8px; }
+.src-new input { flex: 1; }
+.chip.ok { background: var(--ok-soft); color: var(--ok); }
+.src-bar { gap: 8px; }
+.src-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.src-bar .seg button.warn { outline: 2px solid var(--sun); }
+.src-line { margin: 0; }
+.src-dropped ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.src-dropped li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.panel.warn-soft { border-color: var(--sun); background: var(--sun-soft); }
+.dish-alt { display: block; font-size: .72rem; color: var(--muted); }
+
+/* ---------- price statistics ---------- */
+.ps-bar { display: grid; gap: 10px; margin-block: 12px; }
+.ps-bar .grid3 { gap: 8px; }
+.ps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ps-item { gap: 6px; padding: 12px 14px; }
+.ps-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.ps-table td { padding: 5px 4px; border-top: 1px solid var(--line); }
+.ps-table td.num { text-align: end; white-space: nowrap; }
+.ps-table tr.best td { color: var(--ok); }
+.ps-table tr.mine td:first-child { font-weight: 600; }
+.ps-item .up, .ps-table .up { color: var(--danger); }
+.ps-item .down, .ps-table .down { color: var(--ok); }
+.ps-path { margin: 0; font-weight: 600; }
+.arrived-btn { margin: 10px 0; min-height: 52px; font-size: 1.02rem; }
