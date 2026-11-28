@@ -20,6 +20,17 @@ async function rpc(name: string, args: Record<string, unknown>) {
   return t ? JSON.parse(t) : null;
 }
 
+// a plain-text copy next to the HTML (mail filters trust a message more when both are there)
+function textOf(html: string) {
+  return html
+    .replace(/<a [^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/g, "$2: $1")
+    .replace(/<(br|\/p|\/h1|\/li|\/tr|\/div)[^>]*>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 Deno.serve(async () => {
   if (!KEY) return Response.json({ ok: false, reason: "RESEND_API_KEY not set" });
   const batch: { id: number; email: string; subject: string; html: string }[] = await rpc("tq_mail_claim", { p_limit: 20 });
@@ -30,7 +41,7 @@ Deno.serve(async () => {
       const r = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: FROM, to: [m.email], subject: m.subject, html: m.html }),
+        body: JSON.stringify({ from: FROM, to: [m.email], subject: m.subject, html: m.html, text: textOf(m.html) }),
       });
       if (!r.ok) err = `${r.status} ${(await r.text()).slice(0, 300)}`;
     } catch (e) {
