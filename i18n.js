@@ -182,7 +182,7 @@ window.TARWEEQA_I18N = {
     psDone: 'خلص', psPicking: 'بيختار', psNone: 'ما ردش', psOut: 'مش هياكل',
     cntDone: 'خلص {n}', cntPicking: 'بيختار {n}', cntNone: 'ما ردش {n}', cntOut: 'مش هياكل {n}',
     votingTitle: 'نطلب منين النهارده؟', votesCount: 'صوّت {n} من {m}',
-    closesAt: 'يقفل {t}', closesIn: 'يقفل بعد {t}',
+    closedAt: 'قفل الساعة {t}', closesAt: 'يقفل {t}', closesIn: 'يقفل بعد {t}',
 
     pickRest: 'هتطلبوا منين؟', pickRestHint: 'اختار مطعم واحد عشان الناس تبدأ تطلب على طول، أو من 2 لـ 4 مطاعم عشان الناس تصوّت.',
     searchRest: 'دوّر على مطعم', lastOrdered: 'آخر طلب', addRestaurant: 'مطعم جديد', newRestaurant: 'مطعم جديد',
@@ -518,7 +518,7 @@ window.TARWEEQA_I18N = {
     psDone: 'Done', psPicking: 'Picking', psNone: 'No reply', psOut: 'Not eating',
     cntDone: 'Done {n}', cntPicking: 'Picking {n}', cntNone: 'No reply {n}', cntOut: 'Not eating {n}',
     votingTitle: 'Where do we order from today?', votesCount: '{n} of {m} voted',
-    closesAt: 'Closes {t}', closesIn: 'Closes in {t}',
+    closedAt: 'Closed at {t}', closesAt: 'Closes {t}', closesIn: 'Closes in {t}',
 
     pickRest: 'Where are you ordering from?', pickRestHint: 'Pick one restaurant so people can start ordering right away, or 2 to 4 so the group votes.',
     searchRest: 'Search restaurants', lastOrdered: 'Last ordered', addRestaurant: 'New restaurant', newRestaurant: 'New restaurant',

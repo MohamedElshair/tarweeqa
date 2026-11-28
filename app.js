@@ -40,6 +40,13 @@
   const comma = () => (S.lang === 'ar' ? '، ' : ', ');
   const loc = () => (S.lang === 'ar' ? 'ar-EG-u-nu-latn' : 'en-GB');
   const fmtTime = ms => new Date(ms).toLocaleTimeString(loc(), { hour: 'numeric', minute: '2-digit' });
+  // which day an order is from, so orders from the same restaurant can be told apart: "Sat 28 Nov · 9:05 AM" (with "today"/"yesterday")
+  const fmtDay = ms => {
+    if (!ms) return '';
+    const d = Math.floor((startOfDay(Date.now()) - startOfDay(ms)) / 86400000);
+    const day = new Date(ms).toLocaleDateString(loc(), { weekday: 'long', day: 'numeric', month: 'long' });
+    return (d === 0 ? t('today') + ' · ' : d === 1 ? t('yesterday') + ' · ' : '') + day + ' · ' + fmtTime(ms);
+  };
   const fmtDate = ms => new Date(ms).toLocaleDateString(loc(), { weekday: 'long', day: 'numeric', month: 'long' });
   function fmtAgo(ms) {
     if (!ms) return t('never');
@@ -566,6 +573,7 @@
     return `<button class="active-card state-${st}" data-act="openCart" data-id="${esc(c.id)}">
       <span class="ac-top">${statusChip(st)}<span class="tnum clock-sm">${st === 'voting' || st === 'ordering' ? `<span data-countdown="${c.closesAt}"></span>` : ''}</span></span>
       <strong class="ac-title">${st !== 'voting' ? restLogo(c, c.restaurant.name, 'sm') : ''}${esc(title)}</strong>
+      <span class="ac-date tnum">📅 ${esc(fmtDay(c.createdAt))}</span>
       <small class="muted">${c.solo ? `<span class="chip chip-out">${esc(t('soloChip'))}</span> ` : ''}${esc(c.title || '')}${c.title ? ' · ' : ''}${esc(t('host'))}: ${esc(c.ownerId === me() ? t('you') : c.ownerName)}</small>
       <span class="ac-stats tnum">${esc(sub)}</span>
       ${st !== 'voting' ? `<span class="ac-me">${personChip(mine)}${est && est.total ? `<span class="tnum">${esc(t('yourEstimate'))} ≈ <b>${esc(money(est.total))}</b></span>` : ''}</span>` : ''}
@@ -585,7 +593,7 @@
     }
     return `<li><button class="cart-card state-${st}" data-act="openCart" data-id="${esc(c.id)}">
       <span class="cc-main"><strong>${esc(c.restaurant ? c.restaurant.name : t('votingTitle'))}</strong>
-        <small class="muted">${esc(fmtAgo(c.createdAt))} · ${esc(t('host'))}: ${esc(c.ownerId === me() ? t('you') : c.ownerName)}${row ? ' · ' + esc(money(row.total)) : ''}</small></span>
+        <small class="muted">${esc(fmtDay(c.createdAt))} · ${esc(t('host'))}: ${esc(c.ownerId === me() ? t('you') : c.ownerName)}${row ? ' · ' + esc(money(row.total)) : ''}</small></span>
       <span class="cc-side">${right || statusChip(st)}</span>
     </button></li>`;
   }
@@ -687,6 +695,15 @@
   }
 
   /* ---------- cart ---------- */
+  // which tab an order opens on: an open order on "mine"; a closed one on what's inside it —
+  // the whole order for its host (or for anyone who didn't eat), the person's own order and bill otherwise
+  function firstTab(c) {
+    if (!c || isOpenStage(stageOf(c)) || stageOf(c) === 'voting') return 'mine';
+    const m = (c.members || {})[me()];
+    const ate = m && m.status !== 'out' && (m.items || []).length;
+    if (isHost(c)) return 'order';
+    return ate ? 'mine' : 'bill';
+  }
   function viewCart() {
     const c = cartById(S.route.id);
     if (!c) return back('home') + `<p class="empty">${esc(t('errLoad'))}</p>`;
@@ -712,12 +729,13 @@
         <div class="ch-title">
           <p class="eyebrow">${esc(c.title || fmtDate(c.createdAt))}</p>
           <h1 class="ch-name">${st !== 'voting' ? restLogo(c, c.restaurant.name) : ''}${esc(st === 'voting' ? t('votingTitle') : c.restaurant.name)}</h1>
+          <p class="ch-date tnum">📅 ${esc(fmtDay(c.createdAt))}</p>
           <p class="muted">${esc(t('host'))}: ${esc(c.ownerId === me() ? t('you') : c.ownerName)}</p>
         </div>
         <div class="ch-status">
           ${statusChip(st)}
           ${isOpenStage(st) ? `<span class="clock tnum" data-countdown="${c.closesAt}"></span>` : ''}
-          <small class="muted tnum">${esc(t('closesAt', { t: fmtTime(c.closesAt) }))}</small>
+          <small class="muted tnum">${esc(t(isOpenStage(st) ? 'closesAt' : 'closedAt', { t: fmtTime(c.closesAt) }))}</small>
         </div>
       </section>
       ${isOpenStage(st) && !c.solo ? shareBox(c, st) : ''}
@@ -2828,7 +2846,7 @@
     setLang: el => setLang(el.dataset.lang),
     setTheme: el => setTheme(el.dataset.theme),
     removePhoto: () => saveMyPhoto(''),
-    openCart: el => go('cart', { id: el.dataset.id, tab: el.dataset.tab || 'mine' }),
+    openCart: el => go('cart', { id: el.dataset.id, tab: el.dataset.tab || firstTab(cartById(el.dataset.id)) }),
     tab: el => { S.route.tab = el.dataset.tab; render(true); },
     copy: el => copyText(el.dataset.text),
     payGo: el => { try { navigator.clipboard.writeText(el.dataset.text).catch(() => { }); } catch (e) { } toast(t('amountCopied', { a: el.dataset.text })); },
