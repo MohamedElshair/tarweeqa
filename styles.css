@@ -1041,3 +1041,9 @@ a.link { color: var(--accent); text-decoration: none; }
 .check { display: flex; align-items: center; gap: 8px; font-size: .92rem; }
 .check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .danger-zone { border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+
+/* the next way to import a menu, after the one before it failed */
+.nudge { outline: 2.5px solid var(--sun); outline-offset: 2px; animation: nudge 1.2s ease-in-out 2; }
+@keyframes nudge { 50% { outline-offset: 5px; } }
+@media (prefers-reduced-motion: reduce) { .nudge { animation: none; } }
+.shots .block + small.muted { display: block; margin: -4px 0 8px; }
