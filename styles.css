@@ -1081,3 +1081,5 @@ a.link { color: var(--accent); text-decoration: none; }
 .ps-item .down, .ps-table .down { color: var(--ok); }
 .ps-path { margin: 0; font-weight: 600; }
 .arrived-btn { margin: 10px 0; min-height: 52px; font-size: 1.02rem; }
+.ac-date, .ch-date { display: block; font-size: .86rem; font-weight: 700; color: var(--ink-2, var(--muted)); margin: 2px 0; }
+.ch-date { margin: 4px 0 0; }
