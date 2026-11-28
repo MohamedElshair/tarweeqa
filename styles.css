@@ -144,7 +144,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
   .grid4 { grid-template-columns: repeat(4, 1fr); }
 }
 .grid4 { grid-template-columns: 1fr 1fr; }
-@media (min-width: 520px) { .grid4 { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 520px) { .grid4 { grid-template-columns: repeat(4, 1fr); } .grid5 { grid-template-columns: repeat(5, 1fr); } }
 .check, .paid-toggle { display: flex; align-items: center; gap: 8px; font-size: .9rem; cursor: pointer; }
 .check input, .paid-toggle input { width: 20px; height: 20px; accent-color: var(--ok); }
 details > summary { cursor: pointer; font-weight: 600; color: var(--accent); list-style: none; }
