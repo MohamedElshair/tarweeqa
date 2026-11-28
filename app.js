@@ -886,6 +886,7 @@
         ${est.delivery ? `<div><dt>${esc(t('estDelivery', { n: est.people }))}</dt><dd>${esc(C.fmtMoney(est.delivery))}</dd></div>` : ''}
         ${est.fees ? `<div><dt>${esc(t('rowFees'))}</dt><dd>${esc(C.fmtMoney(est.fees))}</dd></div>` : ''}
         ${est.tax ? `<div><dt>${esc(t('tax'))}</dt><dd>${esc(C.fmtMoney(est.tax))}</dd></div>` : ''}
+        ${est.tq ? `<div><dt>${esc(c.tqFeeLabel || t('tqFeeLabel'))}</dt><dd>${esc(C.fmtMoney(est.tq))}</dd></div>` : ''}
         ${prev > 0.009 ? `<div class="ok"><dt>${esc(t('prevCredit'))}</dt><dd>−${esc(C.fmtMoney(prev))}</dd></div>` : ''}
         ${prev < -0.009 ? `<div class="warn"><dt>${esc(t('prevDebt'))}</dt><dd>+${esc(C.fmtMoney(-prev))}</dd></div>` : ''}
       </dl>
@@ -1925,12 +1926,14 @@
       <section class="panel form">
         <p class="label">${esc(t('typicalCharges'))}</p>
         <p class="muted small-text">${esc(t('typicalChargesHint'))}</p>
-        <div class="grid4">
+        <div class="grid4 grid5">
           <label class="field"><span>${esc(t('delivery'))}</span><input id="rf-del" class="tnum" inputmode="decimal" data-fee="delivery" value="${f.delivery ? esc(f.delivery) : ''}" placeholder="0"></label>
-          <label class="field"><span>${esc(t('servicePctLbl'))}</span><input id="rf-svcp" class="tnum" inputmode="decimal" data-fee="servicePct" value="${f.servicePct ? esc(f.servicePct) : ''}" placeholder="0"></label>
-          <label class="field"><span>${esc(t('taxPct'))}</span><input id="rf-tax" class="tnum" inputmode="decimal" data-fee="taxPct" value="${f.taxPct ? esc(f.taxPct) : ''}" placeholder="0"></label>
+          <label class="field"><span>${esc(t('serviceAmt'))}</span><input id="rf-svc" class="tnum" inputmode="decimal" data-fee="service" value="${f.service ? esc(f.service) : ''}" placeholder="0">${!f.service && f.servicePct ? `<small>${esc(t('wasPct', { p: f.servicePct }))}</small>` : ''}</label>
+          <label class="field"><span>${esc(t('taxAmt'))}</span><input id="rf-tax" class="tnum" inputmode="decimal" data-fee="tax" value="${f.tax ? esc(f.tax) : ''}" placeholder="0">${!f.tax && f.taxPct ? `<small>${esc(t('wasPct', { p: f.taxPct }))}</small>` : ''}</label>
           <label class="field"><span>${esc(t('tipUsual'))}</span><input id="rf-tip" class="tnum" inputmode="decimal" data-fee="tip" value="${f.tip ? esc(f.tip) : ''}" placeholder="0"></label>
+          <label class="field"><span>${esc(t('tqRestFee'))}</span><input id="rf-tq" class="tnum" inputmode="decimal" data-fee="tqFee" value="${f.tqFee ? esc(f.tqFee) : ''}" placeholder="0"></label>
         </div>
+        <small class="muted">${esc(t('feesAmtHint'))}</small>
       </section>
 
       ${!d.items.length ? `<section class="panel setup">
@@ -2415,15 +2418,25 @@
       restaurant: { name: r.name, phone: r.phone || '', talabatUrl: r.talabatUrl || '', webUrl: r.webUrl || '', logo: r.logo || '' },
       menu: (r.items || []).map(i => { const o = { id: i.id, name: i.name, price: i.price, category: i.category || '' }; const og = C.groupsFor(i, r.optGroups).map(g => g.id); if (og.length) o.og = og; return o; }),
       optGroups: clone((r.optGroups || []).filter(g => (g.choices || []).length && (r.items || []).some(i => (i.og || []).includes(g.id)))),
-      estimate: Object.assign({ delivery: 0, service: 0, taxPct: 0, tip: 0 }, r.fees || {})
+      estimate: Object.assign({ delivery: 0, service: 0, tax: 0, taxPct: 0, tip: 0 }, r.fees || {}),
+      // Tarweeqa fee set on the restaurant: a fixed amount on each person (replaces the usual commission)
+      ...(C.num((r.fees || {}).tqFee) > 0 ? { tqFee: { mode: 'fixed', value: C.round2(C.num(r.fees.tqFee)) }, tqFeeLabel: t('tqFeeLabel') } : {})
     };
+  }
+  // a receipt's delivery, service and tax become the restaurant's usual amounts (as on the invoice, not %)
+  function learnFees(fees, rc) {
+    for (const f of rc.fees || []) {
+      if (f.kind === 'delivery') fees.delivery = f.amount;
+      else if (f.kind === 'service' && f.amount > 0) { fees.service = f.amount; fees.servicePct = 0; }
+      else if (f.kind === 'tax' && f.amount > 0) { fees.tax = f.amount; fees.taxPct = 0; }
+    }
   }
   function chargesFromEstimate(c) {
     const e = c.estimate || {};
     const food = C.aggregate(c).total;
     const out = [];
     const add = (kind, amount) => { if (C.num(amount) > 0) out.push({ id: rid(6), kind, label: t('kind_' + kind), amount: C.round2(C.num(amount)), split: C.DEFAULT_SPLIT[kind] }); };
-    add('delivery', e.delivery); add('service', C.num(e.service) + food * C.num(e.servicePct) / 100); add('tax', food * C.num(e.taxPct) / 100); add('tip', e.tip);
+    add('delivery', e.delivery); add('service', C.num(e.service) + food * C.num(e.servicePct) / 100); add('tax', C.num(e.tax) + food * C.num(e.taxPct) / 100); add('tip', e.tip);
     return out;
   }
 
@@ -2793,7 +2806,7 @@
       const c = curCart(), kind = el.dataset.kind;
       const list = clone(c.charges || []);
       let amount = 0;
-      if (kind === 'tax') amount = C.round2(C.aggregate(c).total * C.num((c.estimate || {}).taxPct) / 100);
+      if (kind === 'tax') amount = C.round2(C.num((c.estimate || {}).tax) + C.aggregate(c).total * C.num((c.estimate || {}).taxPct) / 100);
       else if (kind === 'service') amount = C.round2(C.num((c.estimate || {}).service) + C.aggregate(c).total * C.num((c.estimate || {}).servicePct) / 100);
       else if (kind === 'delivery' || kind === 'tip') amount = C.num((c.estimate || {})[kind]);
       list.push({ id: rid(6), kind, label: t('kind_' + kind), amount, split: C.DEFAULT_SPLIT[kind], person: kind === 'shortage' ? c.ownerId : undefined });
@@ -3152,8 +3165,7 @@
           if (!newest || rcAt(rc) >= rcAt(newest)) newest = rc;
         }
         if (newest && rcAt(newest) >= (S.draft.feesAt || 0)) {
-          for (const f of newest.fees) if (f.kind === 'delivery') S.draft.fees.delivery = f.amount;
-          if (newest.servicePct) { S.draft.fees.servicePct = newest.servicePct; S.draft.fees.service = 0; }
+          learnFees(S.draft.fees, newest);
           S.draft.feesAt = rcAt(newest);
         }
         // keep it: the restaurant is saved right away, so a refresh loses nothing
@@ -3375,8 +3387,7 @@
       const fees = Object.assign({}, r.fees || {});
       const p = { items, lastOrderedAt: Date.now(), priceSource: null };
       if (rcAt(rc) >= (r.feesAt || 0)) {
-        for (const f of rc.fees) if (f.kind === 'delivery') fees.delivery = f.amount;
-        if (rc.servicePct) { fees.servicePct = rc.servicePct; fees.service = 0; }
+        learnFees(fees, rc);
         p.fees = fees; p.feesAt = rcAt(rc);
       }
       await guard(S.store.patchRestaurant(S.gid, r.id, p));
@@ -3656,6 +3667,7 @@
         ${est.delivery ? `<div><dt>${esc(t('estDelivery', { n: est.people }))}</dt><dd>${esc(C.fmtMoney(est.delivery))}</dd></div>` : ''}
         ${est.fees ? `<div><dt>${esc(t('rowFees'))}</dt><dd>${esc(C.fmtMoney(est.fees))}</dd></div>` : ''}
         ${est.tax ? `<div><dt>${esc(t('tax'))}</dt><dd>${esc(C.fmtMoney(est.tax))}</dd></div>` : ''}
+        ${est.tq ? `<div><dt>${esc(c.tqFeeLabel || t('tqFeeLabel'))}</dt><dd>${esc(C.fmtMoney(est.tq))}</dd></div>` : ''}
         ${prev > 0.009 ? `<div class="ok"><dt>${esc(t('prevCredit'))}</dt><dd>−${esc(C.fmtMoney(prev))}</dd></div>` : ''}
         ${prev < -0.009 ? `<div class="warn"><dt>${esc(t('prevDebt'))}</dt><dd>+${esc(C.fmtMoney(-prev))}</dd></div>` : ''}
         <div class="grand"><dt>${esc(t('basketEstTotal'))}</dt><dd>≈ ${esc(money(total))}</dd></div>
@@ -4034,7 +4046,10 @@
   function syncDraft() {
     if (!S.draft) return;
     document.querySelectorAll('[data-draft]').forEach(inp => { S.draft[inp.dataset.draft] = inp.value.trim(); });
-    document.querySelectorAll('[data-fee]').forEach(inp => { S.draft.fees[inp.dataset.fee] = C.round2(C.num(inp.value)); });
+    const feeIns = document.querySelectorAll('[data-fee]');
+    feeIns.forEach(inp => { S.draft.fees[inp.dataset.fee] = C.round2(C.num(inp.value)); });
+    // service and tax are typed as the amount on the invoice: an amount typed replaces the old percentage
+    if (feeIns.length) { if (S.draft.fees.service > 0) S.draft.fees.servicePct = 0; if (S.draft.fees.tax > 0) S.draft.fees.taxPct = 0; }
     document.querySelectorAll('[data-change="itemName"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && inp.value.trim() && inp.value.trim() !== it.name) it.name = C.fixSpelling(inp.value.trim()); });
     document.querySelectorAll('[data-change="itemPrice"]').forEach(inp => { const it = S.draft.items.find(i => i.id === inp.dataset.id); if (it && C.num(inp.value) > 0 && C.round2(C.num(inp.value)) !== C.num(it.price)) { it.price = C.round2(C.num(inp.value)); it.at = Date.now(); } });
     document.querySelectorAll('[data-og]').forEach(inp => {

@@ -510,11 +510,11 @@
   }
 
   /* Live estimate while people are still choosing.
-     cart.estimate = { delivery, service, taxPct, tip } — typical charges saved with the restaurant.
+     cart.estimate = { delivery, service, tax, tip } (amounts as on the invoice; old ones may have servicePct/taxPct) — typical charges saved with the restaurant.
      Returns the expected share of `key` (pass extraSub to preview adding an item). */
   function estimateFor(cart, key, extraSub) {
     cart = withShared(cart);
-    const e = Object.assign({ delivery: 0, service: 0, servicePct: 0, taxPct: 0, tip: 0 }, cart.estimate || {});
+    const e = Object.assign({ delivery: 0, service: 0, servicePct: 0, tax: 0, taxPct: 0, tip: 0 }, cart.estimate || {});
     const ms = cart.members || {};
     const subs = {};
     for (const k of Object.keys(ms)) if (ms[k].status !== 'out') subs[k] = memberSubtotal(ms[k]);
@@ -522,12 +522,15 @@
     const keys = Object.keys(subs).filter(k => subs[k] > 0);
     const food = keys.reduce((s, k) => s + subs[k], 0);
     const sub = subs[key] || 0;
-    if (sub <= 0) return { sub: 0, delivery: 0, fees: 0, tax: 0, total: 0, people: keys.length, food };
+    if (sub <= 0) return { sub: 0, delivery: 0, fees: 0, tax: 0, tq: 0, total: 0, people: keys.length, food };
     const ratio = food > 0 ? sub / food : 0;
     const delivery = round2(num(e.delivery) / Math.max(1, keys.length));
     const fees = round2((num(e.service) + num(e.tip)) * ratio + sub * num(e.servicePct) / 100);
-    const tax = round2(sub * num(e.taxPct) / 100);
-    return { sub, delivery, fees, tax, total: round2(sub + delivery + fees + tax), people: keys.length, food };
+    // service and tax are invoice amounts, shared by what each person ordered (old orders may still carry a %)
+    const tax = round2(num(e.tax) * ratio + sub * num(e.taxPct) / 100);
+    const tqc = cart.tqFee || {}, tqv = num(tqc.value);
+    const tq = key === cart.ownerId || tqv <= 0 ? 0 : round2(tqc.mode === 'fixed' ? tqv : sub * tqv / 100);
+    return { sub, delivery, fees, tax, tq, total: round2(sub + delivery + fees + tax + tq), people: keys.length, food };
   }
 
   /* Charges added at checkout. Each charge:
