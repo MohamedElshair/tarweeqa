@@ -722,6 +722,9 @@
       </section>
       ${isOpenStage(st) && !c.solo ? shareBox(c, st) : ''}
       ${banner}
+      ${(st === 'ordered' || st === 'settled') && !c.solo ? (c.arrivedAt
+        ? `<p class="banner ok"><span>${esc(t('foodArrivedAt', { t: fmtTime(c.arrivedAt) }))}</span></p>`
+        : host ? `<button class="primary block arrived-btn" data-act="foodArrived">🛵 ${esc(t('foodArrivedBtn'))}</button>` : '') : ''}
       ${c.solo ? `<p class="banner soft"><span>${esc(t('soloOrderedNote'))}</span></p>` : ''}
       ${host && !c.solo && isAdmin() && (st === 'ordering' || st === 'closed') ? changeRestPanel(c) : ''}
       ${st !== 'voting' ? sourceBar(c, st, host) : ''}
@@ -2167,6 +2170,7 @@
           <label class="field"><span>${esc(t('yourPhone'))}</span><input id="p-phone" name="phone" type="tel" dir="ltr" value="${esc(ph)}"${cloud ? ` readonly aria-describedby="p-phone-note"` : ''}>${cloud ? `<small id="p-phone-note">${esc(t('phoneIsAccount'))}</small>` : ''}</label>
           <div class="grid2">
             <label class="field"><span>${esc(t('instapayAny'))}</span><input id="p-insta" name="instapay" dir="ltr" value="${esc(instaValue(p))}" placeholder="name@instapay / https://ipn.eg/…"></label>
+<label class="field"><span>${esc(t('emailLbl'))}</span><input id="p-email" name="email" type="email" dir="ltr" autocomplete="email" inputmode="email" value="${esc(p.email || '')}" placeholder="name@example.com" aria-describedby="p-email-note"><small id="p-email-note">${esc(t('emailHint'))}</small></label>
             <label class="field"><span>${esc(t('wallet'))}</span><input id="p-wallet" name="wallet" type="tel" dir="ltr" value="${esc(p.wallet || '')}" placeholder="01xxxxxxxxx"></label>
           </div>
           <p class="form-error" id="p-err" hidden></p>
@@ -3044,6 +3048,13 @@
     extend: () => { const c = curCart(); patch(c, { closesAt: Math.max(Date.now(), c.closesAt) + 10 * 60000, stage: 'ordering' }); },
     closeCart: () => { const c = curCart(); patch(c, { closesAt: Math.min(c.closesAt, Date.now()) }); },
     reopen: () => { const c = curCart(); patch(c, { stage: 'ordering', closesAt: Math.max(Date.now() + 15 * 60000, c.closesAt) }); toast(t('reopened')); },
+    // host: the food is here → everyone in the order is told (e-mail goes out from the database)
+    foodArrived: async () => {
+      const c = curCart(); if (!c || c.arrivedAt) return;
+      c.arrivedAt = Date.now();
+      await patch(c, { arrivedAt: c.arrivedAt });
+      toast(t('foodArrivedSent')); render(true);
+    },
     markOrdered: async () => {
       const c = curCart();
       const p = { stage: 'ordered', closesAt: Math.min(c.closesAt, Date.now()) };
@@ -4701,13 +4712,14 @@
       render(true);
     },
     profile: form => {
-      const p = Object.assign({ name: form.name.value.trim(), phone: form.phone.value.trim(), wallet: form.wallet.value.trim() }, splitInsta(form.instapay.value));
+      const p = Object.assign({ name: form.name.value.trim(), phone: form.phone.value.trim(), wallet: form.wallet.value.trim(), email: form.email ? form.email.value.trim().toLowerCase() : (S.profile.email || '') }, splitInsta(form.instapay.value));
       const err = $('#p-err');
       if (!p.name) { err.textContent = t('errName'); err.hidden = false; return; }
+      if (p.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email)) { err.textContent = t('errEmail'); err.hidden = false; return; }
       if (!C.isValidPhone(p.phone)) { err.textContent = t('errPhone'); err.hidden = false; return; }
       S.profile = Object.assign({}, S.profile, p);
       if (isLocal()) S.store.saveProfile(S.profile); else LS.set('tarweeqa.profile', S.profile);
-      if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(p.name, { instapay: p.instapay, instapayLink: p.instapayLink, wallet: p.wallet }));
+      if (S.store.saveProfileRemote) guard(S.store.saveProfileRemote(p.name, { instapay: p.instapay, instapayLink: p.instapayLink, wallet: p.wallet, email: p.email }));
       if (S.group && S.group.roster && S.group.roster[me()]) guard(S.store.joinGroup(S.gid, Object.assign({}, S.group.roster[me()], { name: p.name, phone: p.phone })));
       toast(t('saved')); go('home');
     },
